@@ -182,7 +182,7 @@ func (m *InstanceManager) CreateCombatInstance(mainWorld *ecs.World, attackerID,
 	m.instances[instID] = inst
 
 	// Отправляем Gateway команду смены маршрута для игроков
-	m.sendRoutingUpdates(inst)
+	m.sendRoutingUpdates(mainWorld, inst)
 
 	return instID
 }
@@ -504,10 +504,10 @@ func (m *InstanceManager) setFleetCombatState(world *ecs.World, fleetID domain.E
 	}
 }
 
-func (m *InstanceManager) sendRoutingUpdates(inst *CombatInstance) {
+func (m *InstanceManager) sendRoutingUpdates(mainWorld *ecs.World, inst *CombatInstance) {
 	for _, participantID := range inst.Participants {
 		// Отсылаем маршрутизацию только для реальных игроков
-		if _, isPlayer := inst.World.GetComponent(participantID, domain.PlayerData{}); isPlayer {
+		if _, isPlayer := mainWorld.GetComponent(participantID, domain.PlayerData{}); isPlayer {
 			updateMsg := fmt.Sprintf("%d,%d", participantID, inst.InstanceID)
 			_ = m.bus.Publish("system.routing.update", []byte(updateMsg))
 		}

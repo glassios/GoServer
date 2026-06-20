@@ -59,15 +59,9 @@ func (s *FleetEngagementSystem) Update(world *ecs.World, dt float64) {
 				dy := t1.Y - t2.Y
 				distSq := dx*dx + dy*dy
 
-				// Вычисляем радиус авто-боя по дальности оружия флотов (по умолчанию 30)
-				var range1 float32 = 30.0
-				if wVal1, ok := world.GetComponent(id1, domain.Weapon{}); ok {
-					range1 = wVal1.(*domain.Weapon).Range
-				}
-				var range2 float32 = 30.0
-				if wVal2, ok := world.GetComponent(id2, domain.Weapon{}); ok {
-					range2 = wVal2.(*domain.Weapon).Range
-				}
+				// Вычисляем радиус сближения для начала боя на карте мира
+				range1 := GetMainMapEngagementRange(world, id1)
+				range2 := GetMainMapEngagementRange(world, id2)
 
 				if AreHostile(world, id1, id2) {
 					// Бой начинается только если агрессор находится в зоне атаки от цели
@@ -306,4 +300,17 @@ func isAggressor(world *ecs.World, id, target domain.EntityID) bool {
 
 	// Шахтеры по умолчанию мирные и первыми в бой не лезут
 	return false
+}
+
+func GetMainMapEngagementRange(world *ecs.World, id domain.EntityID) float32 {
+	if IsMiner(world, id) {
+		return 80.0
+	}
+	if IsPatrol(world, id) {
+		return 60.0
+	}
+	if IsPirate(world, id) {
+		return 50.0
+	}
+	return 50.0 // Default/Player
 }
