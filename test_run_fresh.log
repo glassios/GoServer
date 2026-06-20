@@ -1,0 +1,21 @@
+?   	github.com/Home/galaxy-mmo/cmd/gateway	[no test files]
+?   	github.com/Home/galaxy-mmo/cmd/tools/botclient	[no test files]
+ok  	github.com/Home/galaxy-mmo/cmd/worldnode	0.391s
+--- FAIL: TestAuth_Integration (0.12s)
+    auth_test.go:78: registration failed: failed to insert account: pq: duplicate key value violates unique constraint "accounts_pkey" (23505)
+FAIL
+FAIL	github.com/Home/galaxy-mmo/internal/auth	0.580s
+ok  	github.com/Home/galaxy-mmo/internal/config	0.216s
+?   	github.com/Home/galaxy-mmo/internal/domain	[no test files]
+ok  	github.com/Home/galaxy-mmo/internal/ecs	0.245s
+ok  	github.com/Home/galaxy-mmo/internal/gameloop	0.473s
+ok  	github.com/Home/galaxy-mmo/internal/messaging	0.470s
+ok  	github.com/Home/galaxy-mmo/internal/network	5.229s
+ok  	github.com/Home/galaxy-mmo/internal/persistence	0.616s
+?   	github.com/Home/galaxy-mmo/internal/persistence/postgres	[no test files]
+?   	github.com/Home/galaxy-mmo/internal/persistence/redis	[no test files]
+ok  	github.com/Home/galaxy-mmo/internal/spatial	0.204s
+ok  	github.com/Home/galaxy-mmo/internal/systems	0.544s
+ok  	github.com/Home/galaxy-mmo/pkg/mathutil	0.227s
+ok  	github.com/Home/galaxy-mmo/pkg/protocol	0.270s
+FAIL

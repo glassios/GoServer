@@ -1,0 +1,14 @@
+server:
+  tickrate: 20
+  max_players: 20
+  address: ":7777"
+grid:
+  cell_size: 100
+  world_width: 5000
+  world_height: 5000
+database:
+  dsn: "postgres://postgres:postgres@localhost:5432/galaxy?sslmode=disable"
+redis:
+  address: "localhost:6379"
+nats:
+  url: "nats://localhost:4222"

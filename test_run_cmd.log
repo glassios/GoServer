@@ -1,0 +1,17 @@
+?   	github.com/Home/galaxy-mmo/cmd/gateway	[no test files]
+?   	github.com/Home/galaxy-mmo/cmd/tools/botclient	[no test files]
+ok  	github.com/Home/galaxy-mmo/cmd/worldnode	(cached)
+ok  	github.com/Home/galaxy-mmo/internal/auth	(cached)
+ok  	github.com/Home/galaxy-mmo/internal/config	(cached)
+?   	github.com/Home/galaxy-mmo/internal/domain	[no test files]
+ok  	github.com/Home/galaxy-mmo/internal/ecs	(cached)
+ok  	github.com/Home/galaxy-mmo/internal/gameloop	(cached)
+ok  	github.com/Home/galaxy-mmo/internal/messaging	(cached)
+ok  	github.com/Home/galaxy-mmo/internal/network	(cached)
+ok  	github.com/Home/galaxy-mmo/internal/persistence	(cached)
+?   	github.com/Home/galaxy-mmo/internal/persistence/postgres	[no test files]
+?   	github.com/Home/galaxy-mmo/internal/persistence/redis	[no test files]
+ok  	github.com/Home/galaxy-mmo/internal/spatial	(cached)
+ok  	github.com/Home/galaxy-mmo/internal/systems	(cached)
+ok  	github.com/Home/galaxy-mmo/pkg/mathutil	(cached)
+ok  	github.com/Home/galaxy-mmo/pkg/protocol	(cached)

@@ -1,0 +1,300 @@
+syntax = "proto3";
+
+package protocol;
+
+option go_package = "github.com/Home/galaxy-mmo/pkg/protocol;protocol";
+
+enum PacketType {
+  PACKET_UNKNOWN = 0;
+  
+  // Client to Server
+  C_AUTH_REQUEST = 1;
+  C_MOVE_INPUT = 2;
+  C_SHOOT_INPUT = 3;
+  C_MINE_INPUT = 4;
+  C_DOCK_INPUT = 5;
+  C_BUY_INPUT = 6;
+  C_SELL_INPUT = 7;
+  C_PING = 8;
+
+  // Server to Client
+  S_AUTH_RESPONSE = 9;
+  S_WORLD_SNAPSHOT = 10;
+  S_DELTA_SNAPSHOT = 11;
+  S_DAMAGE_EVENT = 12;
+  S_DEATH_EVENT = 13;
+  S_CHAT_MESSAGE = 14;
+  S_MARKET_DATA = 15;
+  S_INVENTORY_UPDATE = 16;
+  S_PONG = 17;
+
+  // Corporations & Production (added in Phase 3)
+  C_CREATE_CORP_REQUEST = 18;
+  S_CREATE_CORP_RESPONSE = 19;
+  C_INVITE_CORP_REQUEST = 20;
+  C_JOIN_CORP_REQUEST = 21;
+  C_START_REFINE_REQUEST = 22;
+  C_BUILD_SHIP_REQUEST = 23;
+  C_VAULT_ACTION = 24;
+  S_VAULT_STATUS = 25;
+  C_JOIN_COMBAT_REQUEST = 26;
+}
+
+message Packet {
+  uint32 sequence = 1;
+  uint32 ack = 2;
+  uint32 ack_bitfield = 3;
+  PacketType type = 4;
+  bytes payload = 5;
+}
+
+// Client Messages
+message AuthRequest {
+  string login = 1;
+  string password = 2;
+}
+
+message MoveInput {
+  float x = 1;
+  float y = 2;
+}
+
+message ShootInput {
+  bool active = 1;
+  uint64 target_id = 2;
+}
+
+message MineInput {
+  bool active = 1;
+  uint64 target_id = 2;
+}
+
+message DockInput {
+  uint64 station_id = 1;
+}
+
+message BuyInput {
+  string resource = 1;
+  int32 amount = 2;
+  uint64 station_id = 3;
+}
+
+message SellInput {
+  string resource = 1;
+  int32 amount = 2;
+  uint64 station_id = 3;
+}
+
+message Ping {
+  double timestamp = 1;
+}
+
+// Server Messages
+message AuthResponse {
+  bool success = 1;
+  string session_token = 2;
+  uint64 entity_id = 3;
+  string error_message = 4;
+}
+
+message EntitySnapshot {
+  uint64 entity_id = 1;
+  uint32 entity_type = 2; // matches domain.EntityType
+  float x = 3;
+  float y = 4;
+  float rotation = 5;
+  float vx = 6;
+  float vy = 7;
+  int32 hp = 8;
+  int32 max_hp = 9;
+  int32 shield = 10;
+  int32 max_shield = 11;
+  string name = 12;
+  uint32 faction_id = 13;
+  uint32 corp_id = 14;
+  uint64 target_id = 15;
+  bool is_shooting = 16;
+  bool is_mining = 17;
+  bool refinery_active = 18;
+  int32 shipyard_queue_len = 19;
+  string ship_type = 20;
+  int32 price_iron = 21;
+  int32 price_titanium = 22;
+  int32 price_crystal = 23;
+  int32 qty_iron = 24;
+  int32 qty_titanium = 25;
+  int32 qty_crystal = 26;
+  int32 qty_iron_plates = 27;
+  int32 qty_titanium_plates = 28;
+  int32 cargo_capacity = 29;
+  int32 cargo_load = 30;
+  int64 credits = 31;
+  int32 qty_silicon_wafers = 32;
+  int32 qty_fuel_cells = 33;
+  int32 qty_microchips = 34;
+  int32 qty_energy_coils = 35;
+  int32 qty_laser_cannon = 36;
+  int32 qty_mining_laser = 37;
+}
+
+message WorldSnapshot {
+  uint64 tick = 1;
+  repeated EntitySnapshot entities = 2;
+}
+
+message DeltaSnapshot {
+  uint64 tick = 1;
+  repeated EntitySnapshot updated_entities = 2;
+  repeated uint64 destroyed_entities = 3;
+}
+
+message DamageEvent {
+  uint64 attacker_id = 1;
+  uint64 target_id = 2;
+  int32 damage = 3;
+  bool is_killed = 4;
+}
+
+message DeathEvent {
+  uint64 entity_id = 1;
+}
+
+message ChatMessage {
+  string sender = 1;
+  string message = 2;
+}
+
+message MarketItem {
+  string resource = 1;
+  int32 price = 2;
+  int32 stock = 3;
+}
+
+message MarketData {
+  repeated MarketItem items = 1;
+}
+
+message ItemInstanceProto {
+  uint64 id = 1;
+  uint32 definition_id = 2;
+  int32 quantity = 3;
+  string location_type = 4;
+  uint64 location_id = 5;
+  uint64 owner_id = 6;
+  string state = 7;
+  string name = 8;
+  string category = 9;
+  bool stackable = 10;
+  float volume = 11;
+  string meta_data_json = 12;
+}
+
+message InventoryUpdate {
+  int64 credits = 1;
+  repeated ItemInstanceProto cargo = 2;
+}
+
+message Pong {
+  double timestamp = 1;
+}
+
+message ServerCommand {
+  uint64 player_id = 1;
+  PacketType type = 2;
+  bytes payload = 3;
+}
+
+message PlayerMigrationPayload {
+  uint64 player_id = 1;
+  float x = 2;
+  float y = 3;
+  float rotation = 4;
+  float vx = 5;
+  float vy = 6;
+  int32 hp = 7;
+  int32 max_hp = 8;
+  int32 shield = 9;
+  int32 max_shield = 10;
+  float shield_regen_rate = 11;
+  string weapon_type = 12;
+  int32 weapon_damage = 13;
+  float weapon_range = 14;
+  float weapon_cooldown = 15;
+  int32 cargo_capacity = 16;
+  repeated ItemInstanceProto cargo_items = 17;
+  float mining_power = 18;
+  float mining_range = 19;
+  string ship_type = 20;
+  float max_speed = 21;
+  float turn_rate = 22;
+  uint64 account_id = 23;
+  string player_name = 24;
+  int64 credits = 25;
+  string session_id = 26;
+  uint32 faction_id = 27;
+  bool is_npc = 28;
+  string ai_behavior = 29;
+  uint64 ai_target_id = 30;
+}
+
+message SystemTransferRequest {
+  uint64 player_id = 1;
+  uint32 target_system_id = 2;
+  float spawn_x = 3;
+  float spawn_y = 4;
+  PlayerMigrationPayload payload = 5;
+}
+
+message SystemTransferResponse {
+  uint64 player_id = 1;
+  bool success = 2;
+  string error_message = 3;
+}
+
+message CreateCorpRequest {
+  string name = 1;
+}
+
+message CreateCorpResponse {
+  bool success = 1;
+  uint32 corp_id = 2;
+  string error_message = 3;
+}
+
+message InviteCorpRequest {
+  uint64 invitee_id = 1;
+}
+
+message JoinCorpRequest {
+  uint32 corp_id = 1;
+}
+
+message StartRefineRequest {
+  uint64 station_id = 1;
+  string resource_type = 2;
+  int32 amount = 3;
+}
+
+message BuildShipRequest {
+  uint64 station_id = 1;
+  string ship_type = 2;
+}
+
+message VaultAction {
+  uint64 station_id = 1;
+  string resource = 2;
+  int32 amount = 3;
+  string vault_type = 4;  // "personal" or "corporate"
+  string action_type = 5; // "deposit" or "withdraw"
+}
+
+message VaultStatus {
+  uint64 station_id = 1;
+  repeated ItemInstanceProto personal_items = 2;
+  repeated ItemInstanceProto corporate_items = 3;
+}
+
+message JoinCombatRequest {
+  uint32 combat_instance_id = 1;
+  uint64 align_with_fleet_id = 2; // 0 for FFA (free for all)
+}

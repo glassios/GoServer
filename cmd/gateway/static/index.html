@@ -1,0 +1,3181 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Galaxy MMO Web Visualizer & Client</title>
+    <!-- Google Fonts: Orbitron for Sci-Fi look, Inter for UI -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #07070c;
+            --panel-bg: rgba(15, 15, 27, 0.7);
+            --border-color: rgba(0, 242, 254, 0.2);
+            --border-glow: rgba(0, 242, 254, 0.4);
+            --accent-cyan: #00f2fe;
+            --accent-magenta: #ff007f;
+            --accent-green: #39ff14;
+            --accent-orange: #ff9f1c;
+            --accent-blue: #007ffd;
+            --text-color: #e2e8f0;
+            --text-muted: #94a3b8;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        #app-container {
+            display: flex;
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+
+        /* Space Map Canvas */
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cpolygon points='2,2 20,8 12,12 8,20' fill='rgba(0, 255, 204, 0.9)' stroke='%23003322' stroke-width='1.5'/%3E%3Ccircle cx='2' cy='2' r='1.5' fill='%23ffffff'/%3E%3C/svg%3E") 2 2, default;
+        }
+
+        canvas:active {
+            cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cpolygon points='2,2 20,8 12,12 8,20' fill='rgba(255, 0, 127, 0.9)' stroke='%2333001a' stroke-width='1.5'/%3E%3Ccircle cx='2' cy='2' r='1.5' fill='%23ffffff'/%3E%3C/svg%3E") 2 2, default;
+        }
+
+        /* Glassmorphism Panels */
+        .panel {
+            position: absolute;
+            background: var(--panel-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5), 0 0 10px var(--border-color);
+            transition: all 0.3s ease;
+        }
+
+        .panel:hover {
+            border-color: var(--border-glow);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.6), 0 0 15px var(--border-glow);
+        }
+
+        /* HUD Headers */
+        h1, h2, h3 {
+            font-family: 'Orbitron', sans-serif;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        h1 {
+            font-size: 1.2rem;
+            color: var(--accent-cyan);
+            text-shadow: 0 0 8px rgba(0, 242, 254, 0.6);
+            margin-bottom: 12px;
+        }
+
+        /* Left Panel: Stats and Controls */
+        #left-panel {
+            top: 20px;
+            left: 20px;
+            width: 300px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+            z-index: 10;
+        }
+
+        /* Right Panel: Controls and Market */
+        #right-panel {
+            top: 20px;
+            right: 20px;
+            width: 320px;
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            z-index: 10;
+        }
+
+        /* Play Panel (Center modal overlay at startup) */
+        #play-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(4, 4, 8, 0.85);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            backdrop-filter: blur(8px);
+        }
+
+        .play-card {
+            background: rgba(15, 15, 27, 0.95);
+            border: 2px solid var(--accent-cyan);
+            box-shadow: 0 0 20px var(--border-glow);
+            border-radius: 16px;
+            padding: 30px;
+            width: 400px;
+            text-align: center;
+        }
+
+        .play-card h2 {
+            color: var(--accent-cyan);
+            font-size: 1.8rem;
+            margin-bottom: 16px;
+            text-shadow: 0 0 10px rgba(0, 242, 254, 0.5);
+        }
+
+        /* Buttons & Inputs */
+        .input-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .input-field {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 10px 12px;
+            color: white;
+            font-family: inherit;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .input-field:focus {
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 8px rgba(0, 242, 254, 0.3);
+        }
+
+        .btn {
+            display: inline-block;
+            width: 100%;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            color: #07070c;
+            border: none;
+            border-radius: 6px;
+            padding: 12px;
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 700;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 15px var(--accent-cyan);
+            filter: brightness(1.1);
+        }
+
+        .btn-secondary {
+            background: rgba(0, 242, 254, 0.1);
+            color: var(--accent-cyan);
+            border: 1px solid var(--border-color);
+            margin-top: 10px;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(0, 242, 254, 0.2);
+            border-color: var(--accent-cyan);
+        }
+
+        .btn-action {
+            padding: 8px 12px;
+            font-size: 0.8rem;
+        }
+
+        /* Stats List */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            font-size: 0.85rem;
+        }
+
+        .stat-item {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 6px;
+            padding: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .stat-label {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+        }
+
+        .stat-val {
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 700;
+            margin-top: 2px;
+        }
+
+        .stat-val.active {
+            color: var(--accent-green);
+        }
+
+        /* Logs / Chat */
+        .logs-box {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 8px;
+            height: 150px;
+            overflow-y: auto;
+            padding: 8px;
+            font-size: 0.75rem;
+            font-family: monospace;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .log-entry {
+            line-height: 1.2;
+            word-break: break-all;
+        }
+
+        .log-combat { color: #ff5555; }
+        .log-mine { color: var(--accent-cyan); }
+        .log-system { color: #aaa; }
+        .log-join { color: var(--accent-green); }
+        .log-trade { color: var(--accent-orange); }
+
+        /* System Info Header */
+        #top-bar {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            display: flex;
+            gap: 12px;
+        }
+
+        .system-tab {
+            background: var(--panel-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-color);
+            padding: 10px 20px;
+            border-radius: 30px;
+            cursor: pointer;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.85rem;
+            font-weight: 700;
+            transition: all 0.2s;
+        }
+
+        .system-tab.active {
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+            box-shadow: 0 0 10px rgba(0, 242, 254, 0.4);
+        }
+
+        /* Station Tabs */
+        .station-tabs {
+            margin-bottom: 6px;
+        }
+        .tab-link {
+            transition: all 0.2s ease;
+            opacity: 0.7;
+        }
+        .tab-link:hover {
+            opacity: 1;
+            color: var(--accent-cyan) !important;
+        }
+        .tab-link.active {
+            opacity: 1;
+            color: var(--accent-cyan) !important;
+            border-bottom: 2px solid var(--accent-cyan) !important;
+            text-shadow: 0 0 8px rgba(0, 242, 254, 0.6);
+        }
+
+        /* Help Info Panel */
+        #controls-help {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 15px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            pointer-events: none;
+            z-index: 5;
+            background: rgba(0,0,0,0.5);
+            padding: 6px 16px;
+            border-radius: 20px;
+        }
+
+        .key-badge {
+            background: #2a2a3f;
+            color: white;
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-weight: bold;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        /* Target Panel (glowing border when targeting something) */
+        #target-panel {
+            background: rgba(15, 15, 27, 0.85);
+            border: 1.5px solid var(--accent-magenta);
+            box-shadow: 0 0 12px rgba(255, 0, 127, 0.3);
+            border-radius: 8px;
+            padding: 10px;
+            display: none;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 0.8rem;
+        }
+
+        .target-name {
+            font-weight: 700;
+            color: var(--accent-magenta);
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 4px;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: var(--accent-magenta);
+            width: 0%;
+            transition: width 0.1s ease;
+        }
+
+        .progress-bar-fill.shield {
+            background: var(--accent-cyan);
+        }
+
+        /* Inventory Grid & Slots Layout */
+        .inventory-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 8px;
+            margin-top: 8px;
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            min-height: 120px;
+        }
+
+        .inventory-slot {
+            aspect-ratio: 1;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            cursor: grab;
+            transition: all 0.15s ease;
+            user-select: none;
+        }
+
+        .inventory-slot:hover {
+            background: rgba(0, 242, 254, 0.05);
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 8px rgba(0, 242, 254, 0.2);
+        }
+
+        .inventory-slot.empty {
+            cursor: default;
+            border: 1px dashed rgba(255, 255, 255, 0.05);
+            background: transparent;
+        }
+
+        .inventory-slot.empty:hover {
+            background: transparent;
+            border-color: rgba(255, 255, 255, 0.05);
+            box-shadow: none;
+        }
+
+        .inventory-slot .item-name {
+            font-size: 0.55rem;
+            text-align: center;
+            font-weight: 700;
+            color: var(--text-color);
+            margin-bottom: 2px;
+            pointer-events: none;
+        }
+
+        .inventory-slot .item-qty {
+            font-size: 0.65rem;
+            font-family: monospace;
+            color: var(--accent-cyan);
+            font-weight: bold;
+            pointer-events: none;
+        }
+
+        .inventory-slot.dragging {
+            opacity: 0.4;
+            cursor: grabbing;
+        }
+
+        .inventory-grid.drag-over {
+            background: rgba(0, 242, 254, 0.1) !important;
+            border-color: var(--accent-cyan) !important;
+        }
+
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Top Navigation for Systems -->
+    <div id="top-bar">
+        <div class="system-tab active" onclick="switchSystem(1)" id="tab-sys-1">System 1 (Centauri)</div>
+        <div class="system-tab" onclick="switchSystem(2)" id="tab-sys-2">System 2 (Sol Outpost)</div>
+    </div>
+
+    <!-- Left Panel: Game State -->
+    <div id="left-panel" class="panel">
+        <h1>Galaxy Console</h1>
+
+        <div class="stats-grid">
+            <div class="stat-item">
+                <div class="stat-label">Web Connection</div>
+                <div class="stat-val active" id="net-status">OFFLINE</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">Active Entities</div>
+                <div class="stat-val" id="entity-count">0</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">Current TPS</div>
+                <div class="stat-val" id="tps-val">0</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">Visual FPS</div>
+                <div class="stat-val" id="fps-val">0</div>
+            </div>
+        </div>
+
+        <div>
+            <h3 style="font-size: 0.8rem; margin-bottom: 6px; color: var(--accent-cyan)">Player Info</h3>
+            <div class="stats-grid" style="margin-bottom: 8px;">
+                <div class="stat-item">
+                    <div class="stat-label">Status</div>
+                    <div class="stat-val" id="player-status-text" style="color: var(--text-muted); font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Spectator</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Position</div>
+                    <div class="stat-val" id="player-pos-text" style="font-family: monospace; font-size: 0.7rem; white-space: nowrap;">-</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Speed</div>
+                    <div class="stat-val" id="player-speed-text" style="font-family: monospace; font-size: 0.7rem; white-space: nowrap;">-</div>
+                </div>
+                <div class="stat-item" style="display: flex; align-items: center; justify-content: center; padding: 0;">
+                    <button class="btn btn-secondary btn-action" onclick="focusCamera()" style="width: 100%; height: 100%; font-size: 0.65rem; margin: 0; padding: 4px 2px; border: 1px solid rgba(0, 242, 254, 0.3);">Focus (C)</button>
+                </div>
+            </div>
+        </div>
+
+        <div>
+            <h3 style="font-size: 0.8rem; margin-bottom: 6px; color: var(--accent-cyan)">Simulated Bots</h3>
+            <button class="btn btn-action" onclick="spawnBot()">Spawn Bot Client</button>
+        </div>
+
+        <div>
+            <h3 style="font-size: 0.8rem; margin-bottom: 6px; color: var(--accent-cyan)">Player Cargo & Credits</h3>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-label">Credits</div>
+                    <div class="stat-val" id="credits-val" style="color: var(--accent-green)">0 c</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Ship Cargo</div>
+                    <div class="stat-val" id="cargo-val">0 / 100</div>
+                    <div id="cargo-details" style="font-size: 0.7rem; color: var(--text-muted); margin-top: 4px; display: flex; flex-direction: column; gap: 1px;"></div>
+                </div>
+            </div>
+        </div>
+
+        <div style="flex-grow: 1; display: flex; flex-direction: column;">
+            <h3 style="font-size: 0.8rem; margin-bottom: 6px; color: var(--accent-cyan)">Server Event Log</h3>
+            <div class="logs-box" id="event-logs">
+                <div class="log-entry log-system">Подключение к WebSocket-шлюзу...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Panel: Targeting & Actions -->
+    <div id="right-panel" class="panel">
+        <h1>Navigation & Target</h1>
+
+        <div id="target-panel">
+            <div class="target-name" id="target-name">No Target</div>
+            <div style="font-size: 0.7rem; color: var(--text-muted)" id="target-id-label">ID: -</div>
+            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;" id="target-corp-sec">Corp: <span id="target-corp-label" style="color: var(--accent-cyan); font-weight: bold;">-</span></div>
+            <div style="font-size: 0.7rem; color: var(--accent-green); margin-top: 2px; display: none;" id="target-credits-sec">Credits: <span id="target-credits-label">0</span> c</div>
+            
+            <div style="margin-top: 4px;" id="target-hp-sec">
+                <div style="display: flex; justify-content: space-between; font-size: 0.7rem;">
+                    <span>HP</span>
+                    <span id="target-hp-label">0/0</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar-fill" id="target-hp-bar"></div>
+                </div>
+            </div>
+
+            <div style="margin-top: 4px;" id="target-shield-sec">
+                <div style="display: flex; justify-content: space-between; font-size: 0.7rem;">
+                    <span>Shield</span>
+                    <span id="target-shield-label">0/0</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar-fill shield" id="target-shield-bar"></div>
+                </div>
+            </div>
+
+            <div style="margin-top: 4px; display: none;" id="target-cargo-sec">
+                <div style="display: flex; justify-content: space-between; font-size: 0.7rem;">
+                    <span>Cargo</span>
+                    <span id="target-cargo-label">0/0</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar-fill" id="target-cargo-bar" style="background: var(--accent-orange); width: 0%;"></div>
+                </div>
+                <div id="target-cargo-details" style="font-size: 0.65rem; color: var(--text-muted); margin-top: 4px; display: flex; flex-direction: column; gap: 1px;"></div>
+            </div>
+
+            <!-- Context Actions -->
+            <div style="margin-top: 10px; display: flex; gap: 8px;">
+                <button class="btn btn-action" id="btn-shoot" onclick="toggleShoot()" style="background: var(--accent-magenta); color: white;">Fire Weapons</button>
+                <button class="btn btn-action btn-secondary" id="btn-mine" onclick="toggleMine()" style="margin-top:0;">Mining Laser</button>
+                <button class="btn btn-action" id="btn-join-combat" onclick="showJoinCombatDialog()" style="background: var(--accent-orange); color: white; display: none; margin-top:0;">Join Battle</button>
+                <button class="btn btn-action" id="btn-attack-fleet" onclick="attackTargetFleet()" style="background: var(--accent-orange); color: white; display: none; margin-top:0;">Attack Fleet</button>
+            </div>
+
+            <!-- Station Interaction Panel -->
+            <div id="station-panel" style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px; display: none; flex-direction: column; gap: 8px;">
+                <h3 style="font-size: 0.8rem; margin: 0; color: var(--accent-cyan)">Station Services</h3>
+
+                <!-- Station Tab Headers -->
+                <div class="station-tabs" style="display: flex; gap: 4px; border-bottom: 1px solid rgba(0, 242, 254, 0.2); padding-bottom: 4px;">
+                    <button class="tab-link active" onclick="switchStationTab('market')" id="tab-btn-market" style="background: none; border: none; color: var(--text-muted); font-family: 'Orbitron', sans-serif; font-size: 0.7rem; cursor: pointer; padding: 4px 8px; outline: none;">Trade</button>
+                    <button class="tab-link" onclick="switchStationTab('personal')" id="tab-btn-personal" style="background: none; border: none; color: var(--text-muted); font-family: 'Orbitron', sans-serif; font-size: 0.7rem; cursor: pointer; padding: 4px 8px; outline: none;">Personal Storage</button>
+                    <button class="tab-link" onclick="switchStationTab('corporate')" id="tab-btn-corporate" style="display: none;">Склад корп.</button>
+                </div>
+
+                <!-- Tab: Market -->
+                <div id="tab-content-market" style="display: flex; flex-direction: column; gap: 8px;">
+                    <!-- Refinery Info -->
+                    <div style="display: none; background: rgba(255,255,255,0.03); padding: 6px; border-radius: 4px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.75rem;">
+                            <span>Refinery:</span>
+                            <span id="refinery-status" style="font-weight: bold;">INACTIVE</span>
+                        </div>
+                        <button class="btn btn-action btn-secondary" id="btn-start-refine" onclick="startRefine()" style="width: 100%; margin-top: 6px; font-size: 0.7rem; padding: 4px 8px; margin-bottom: 0;">Start Refining</button>
+                    </div>
+
+                    <!-- Shipyard Info -->
+                    <div style="display: none; background: rgba(255,255,255,0.03); padding: 6px; border-radius: 4px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.75rem;">
+                            <span>Shipyard Queue:</span>
+                            <span id="shipyard-queue" style="font-weight: bold;">0 orders</span>
+                        </div>
+                        <div style="display: flex; gap: 4px; margin-top: 6px;">
+                            <button class="btn btn-action btn-secondary" onclick="buildShip('fighter')" style="width: 50%; font-size: 0.65rem; padding: 4px 6px; margin-top:0; margin-bottom:0;">Build Fighter</button>
+                            <button class="btn btn-action btn-secondary" onclick="buildShip('miner')" style="width: 50%; font-size: 0.65rem; padding: 4px 6px; margin-top:0; margin-bottom:0;">Build Miner</button>
+                        </div>
+                        <div style="font-size: 0.55rem; color: var(--text-muted); margin-top: 4px; text-align: center;">
+                            Fighter: 10 FePlates, 5 TiPlates, 2 Microchips, 1 Laser Cannon<br/>
+                            Miner: 15 FePlates, 10 TiPlates, 2 Microchips, 1 Mining Laser
+                        </div>
+                    </div>
+
+                    <!-- Market Info (Renamed to Trade) -->
+                    <div style="background: rgba(255,255,255,0.03); padding: 6px; border-radius: 4px; display: flex; flex-direction: column; gap: 4px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; font-size: 0.75rem;">
+                            <span style="font-weight: bold; color: var(--accent-green);">Trade (Available Items)</span>
+                            <div style="display: none; align-items: center; gap: 4px;">
+                                <span>Кол-во:</span>
+                                <input type="number" id="trade-quantity" value="1" min="1" max="1000" style="width: 50px; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.2); color: white; padding: 2px 4px; border-radius: 3px; font-size: 0.7rem; text-align: center;" />
+                            </div>
+                        </div>
+                        <table style="width: 100%; font-size: 0.7rem; border-collapse: collapse; text-align: left;">
+                            <thead>
+                                <tr style="color: var(--text-muted); border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <th>Item</th>
+                                    <th style="text-align: right;">Quantity</th>
+                                </tr>
+                            </thead>
+                            <tbody id="market-table-body">
+                                <!-- Populated dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Tab: Personal Hangar -->
+                <div id="tab-content-personal" style="display: none; flex-direction: column; gap: 8px;">
+                    <div style="background: rgba(255,255,255,0.03); padding: 6px; border-radius: 4px; display: flex; flex-direction: column; gap: 4px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; font-size: 0.75rem; margin-bottom: 4px;">
+                             <span style="font-weight: bold; color: var(--accent-cyan);">Personal Storage</span>
+                            <div style="display: flex; align-items: center; gap: 4px;">
+                                <span>Кол-во:</span>
+                                <input type="number" id="personal-vault-quantity" value="1" min="1" max="1000" style="width: 50px; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.2); color: white; padding: 2px 4px; border-radius: 3px; font-size: 0.7rem; text-align: center;" />
+                            </div>
+                        </div>
+                        <div class="inventory-grid" id="personal-storage-grid" ondragover="event.preventDefault()" ondragenter="event.currentTarget.classList.add('drag-over')" ondragleave="event.currentTarget.classList.remove('drag-over')" ondrop="handleStorageDrop(event)">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab: Corp Vault -->
+                <div id="tab-content-corporate" style="display: none;"></div>
+            </div>
+        </div>
+
+        <div class="stat-item" style="font-size: 0.75rem; color: var(--text-muted)">
+            <h3 style="font-size: 0.8rem; margin-bottom: 4px; color: var(--accent-cyan)">Fleet Cargo</h3>
+            <div class="inventory-grid" id="fleet-cargo-grid" ondragover="event.preventDefault()" ondragenter="event.currentTarget.classList.add('drag-over')" ondragleave="event.currentTarget.classList.remove('drag-over')" ondrop="handleCargoDrop(event)">
+                <!-- Dynamic fleet cargo slots -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Play Overlay Startup Modal -->
+    <div id="play-overlay">
+        <div class="play-card">
+            <h2>Pilot Authentication</h2>
+            <div class="input-group">
+                <label for="pilot-name">Enter Pilot Name</label>
+                <input type="text" id="pilot-name" class="input-field" value="WebPilot" maxlength="15">
+            </div>
+            <button class="btn" onclick="startPlay()">Enter Game</button>
+            <button class="btn btn-secondary" onclick="startSpectate()">Spectate Server Only</button>
+        </div>
+    </div>
+
+    <!-- Helper controls instructions overlay -->
+    <div id="controls-help">
+        <div><span class="key-badge">WASD</span> Navigate</div>
+        <div><span class="key-badge">Space</span> Attack</div>
+        <div><span class="key-badge">F</span> Mine Resource</div>
+        <div><span class="key-badge">Mouse Drag</span> Pan Map</div>
+        <div><span class="key-badge">C</span> Center Camera</div>
+    </div>
+
+    <!-- Build Version Label -->
+    <div id="build-version" style="position: absolute; bottom: 10px; left: 10px; z-index: 1000; font-family: monospace; font-size: 10px; color: var(--text-muted); pointer-events: none;">ver. 0.008</div>
+</div>
+
+<script>
+    // Game Canvas and context
+    const canvas = document.getElementById('game-canvas');
+    const ctx = canvas.getContext('2d');
+
+    // Resize canvas
+    function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // Game variables
+    let socket = null;
+    let currentSystemID = 1;
+    let entities = new Map(); // EntityID -> EntityState
+    let particles = [];
+    let damageNumbers = [];
+
+    // Local player state
+    let localPlayerID = null;
+    let localPlayerFactionID = null;
+    let localPlayerName = "";
+    let isSpectator = true;
+    let keysPressed = { w: false, a: false, s: false, d: false };
+    let targetID = null;
+    let isShooting = false;
+    let isMining = false;
+    let activeStationTab = 'market';
+    let lastQueriedStationID = null;
+    let personalVaultCargo = {};
+    let corporateVaultCargo = {};
+    let playerInventoryCargo = {};
+
+    // Movement/input intervals
+    let inputInterval = null;
+    let lastSentMove = { x: 0, y: 0 };
+    let mouseTargetPos = null;
+    let clickMarker = null;
+
+    // Viewport camera & drag controls
+    let camera = { x: 0, y: 0, zoom: 0.8 };
+    let cameraFollowPlayer = true;
+    let isDragging = false;
+    let dragStart = { x: 0, y: 0 };
+    let cameraStart = { x: 0, y: 0 };
+
+    // Stats
+    let frameCount = 0;
+    let lastFPSUpdate = Date.now();
+    let fps = 60;
+    let lastSnapTime = Date.now();
+    let serverTPS = 20;
+
+    // Particle class
+    class Particle {
+        constructor(x, y, vx, vy, color, size, life) {
+            this.x = x;
+            this.y = y;
+            this.vx = vx;
+            this.vy = vy;
+            this.color = color;
+            this.size = size;
+            this.life = life;
+            this.maxLife = life;
+        }
+
+        update() {
+            this.x += this.vx;
+            this.y += this.vy;
+            this.life -= 0.016; // 60 FPS approx
+        }
+
+        draw(ctx) {
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, this.life / this.maxLife);
+            ctx.fillStyle = this.color;
+            ctx.shadowColor = this.color;
+            ctx.shadowBlur = 8;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+    }
+
+    // Damage Number class
+    class DamageNumber {
+        constructor(x, y, text, color) {
+            this.x = x;
+            this.y = y;
+            this.text = text;
+            this.color = color;
+            this.life = 1.0;
+            this.vy = -0.5 - Math.random() * 0.5;
+            this.vx = (Math.random() - 0.5) * 0.6;
+        }
+
+        update() {
+            this.x += this.vx;
+            this.y += this.vy;
+            this.life -= 0.02;
+        }
+
+        draw(ctx) {
+            ctx.save();
+            ctx.font = "bold 13px 'Orbitron', sans-serif";
+            ctx.fillStyle = this.color;
+            ctx.shadowColor = 'black';
+            ctx.shadowBlur = 4;
+            ctx.globalAlpha = Math.max(0, this.life);
+            ctx.fillText(this.text, this.x, this.y);
+            ctx.restore();
+        }
+    }
+
+
+    // Initialize websocket connection
+    function connectWS() {
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+        
+        socket = new WebSocket(wsUrl);
+
+        socket.onopen = () => {
+            document.getElementById('net-status').textContent = 'CONNECTED';
+            document.getElementById('net-status').className = 'stat-val active';
+            logEvent('Соединение с шлюзом установлено', 'system');
+        };
+
+        socket.onclose = () => {
+            document.getElementById('net-status').textContent = 'DISCONNECTED';
+            document.getElementById('net-status').className = 'stat-val';
+            logEvent('Соединение разорвано. Повторное подключение...', 'system');
+            // Reset combat state on disconnect
+            isShooting = false;
+            isMining = false;
+            setTimeout(connectWS, 2000);
+        };
+
+        socket.onerror = (err) => {
+            console.error('Socket error:', err);
+        };
+
+        socket.onmessage = (event) => {
+            try {
+                const msg = JSON.parse(event.data);
+                handleServerMessage(msg);
+            } catch (e) {
+                console.error('Failed to parse WebSocket message:', e);
+            }
+        };
+    }
+
+    // Handle WebSocket JSON packets
+    function handleServerMessage(msg) {
+        if (msg.system_id && msg.snapshot) {
+            // Only process snapshot of the currently selected system
+            if (msg.system_id !== currentSystemID) return;
+            processWorldSnapshot(msg.snapshot);
+        } else if (msg.type === 'system_transition') {
+            const newSysID = Number(msg.system_id);
+            logEvent(`Прыжок совершен! Автопереключение на Систему ${newSysID}...`, 'system');
+            currentSystemID = newSysID;
+            entities.clear();
+            targetID = null;
+            document.getElementById('target-panel').style.display = 'none';
+            document.getElementById('tab-sys-1').className = newSysID === 1 ? 'system-tab active' : 'system-tab';
+            document.getElementById('tab-sys-2').className = newSysID === 2 ? 'system-tab active' : 'system-tab';
+            cameraFollowPlayer = true;
+            mouseTargetPos = null;
+            keysPressed = { w: false, a: false, s: false, d: false };
+            lastSentMove = { x: 0, y: 0 };
+            
+            // Explicitly notify the server to stop the ship to overwrite any in-flight movement commands
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({
+                    action: 'move',
+                    x: 0,
+                    y: 0
+                }));
+            }
+        } else if (msg.type === 'auth_response') {
+            if (msg.data.success) {
+                localPlayerID = Number(msg.data.entity_id || msg.data.entityId);
+                isSpectator = false;
+                document.getElementById('player-status-text').textContent = 'Pilot: ' + localPlayerName;
+                document.getElementById('player-status-text').style.color = 'var(--accent-green)';
+                logEvent('Авторизация выполнена! ID корабля: ' + localPlayerID, 'join');
+            }
+        } else if (msg.type === 'inventoryupdate' || msg.type === 's_inventory_update') {
+            document.getElementById('credits-val').textContent = msg.data.credits + ' c';
+            let totalCargo = 0;
+            const detailsDiv = document.getElementById('cargo-details');
+            if (detailsDiv) detailsDiv.innerHTML = '';
+            if (msg.data.cargo) {
+                playerInventoryCargo = {};
+                msg.data.cargo.forEach(item => {
+                    const res = item.name;
+                    const qty = item.quantity;
+                    playerInventoryCargo[res] = (playerInventoryCargo[res] || 0) + qty;
+                    totalCargo += qty;
+                    if (qty > 0 && detailsDiv) {
+                        detailsDiv.innerHTML += `<div style="display:flex; justify-content:space-between;"><span>${res}:</span> <span>${qty}</span></div>`;
+                    }
+                });
+                logEvent(`Груз обновлен. Кредиты: ${msg.data.credits} c.`, 'mine');
+            }
+            document.getElementById('cargo-val').textContent = totalCargo + ' / 100';
+        } else if (msg.type === 's_vault_status' || msg.type === 'vaultstatus') {
+            personalVaultCargo = {};
+            if (msg.data.personal_items) {
+                msg.data.personal_items.forEach(item => {
+                    const res = item.name;
+                    personalVaultCargo[res] = (personalVaultCargo[res] || 0) + item.quantity;
+                });
+            }
+            corporateVaultCargo = {};
+            if (msg.data.corporate_items) {
+                msg.data.corporate_items.forEach(item => {
+                    const res = item.name;
+                    corporateVaultCargo[res] = (corporateVaultCargo[res] || 0) + item.quantity;
+                });
+            }
+            if (targetID) {
+                const ent = entities.get(targetID);
+                if (ent) updateTargetUI(ent);
+            }
+        } else if (msg.type === 'chatmessage' || msg.type === 's_chat_message') {
+            const sender = msg.data.sender || 'System';
+            if (sender === 'System') {
+                let category = 'trade';
+                if (msg.data.message.includes('Ошибка') || msg.data.message.includes('недостаточно') || msg.data.message.includes('переполнен')) {
+                    category = 'combat';
+                } else {
+                    category = 'join';
+                }
+                logEvent(`Система: ${msg.data.message}`, category);
+            } else {
+                logEvent(`[CHAT] ${sender}: ${msg.data.message}`, 'system');
+            }
+        }
+    }
+
+    // Process server tick state
+    function processWorldSnapshot(snap) {
+        const now = Date.now();
+        const incomingEntities = snap.entities || [];
+        
+
+        serverTPS = Math.round(1000 / (now - lastSnapTime));
+        if (serverTPS > 30) serverTPS = 20; // Stabilize mock data display
+        document.getElementById('tps-val').textContent = serverTPS + ' TPS';
+        lastSnapTime = now;
+
+        const activeIds = new Set();
+
+        incomingEntities.forEach(ent => {
+            const id = Number(ent.entity_id);
+            activeIds.add(id);
+
+            if (entities.has(id)) {
+                const old = entities.get(id);
+                
+                // Track HP/Shield drops for Damage Floaters
+                if (ent.hp < old.hp) {
+                    createDamageFloat(ent.x, ent.y, `-${old.hp - ent.hp} HP`, '#ff5555');
+                    createSparks(ent.x, ent.y, '#ff3333');
+                    if (id === localPlayerID) {
+                        logEvent(`Ваш корабль получил урон: -${old.hp - ent.hp} HP`, 'combat');
+                    }
+                }
+                if (ent.shield < old.shield) {
+                    createDamageFloat(ent.x, ent.y, `-${old.shield - ent.shield} SH`, '#00f2fe');
+                    createSparks(ent.x, ent.y, '#00f2fe');
+                }
+
+                entities.set(id, {
+                    id: id,
+                    type: ent.entity_type,
+                    name: ent.name,
+                    targetX: ent.x,
+                    targetY: ent.y,
+                    targetRot: ent.rotation,
+                    prevX: old.currX,
+                    prevY: old.currY,
+                    prevRot: old.currRot,
+                    currX: old.currX,
+                    currY: old.currY,
+                    currRot: old.currRot,
+                    vx: ent.vx,
+                    vy: ent.vy,
+                    hp: ent.hp,
+                    maxHp: ent.max_hp,
+                    shield: ent.shield,
+                    maxShield: ent.max_shield,
+                    factionId: ent.faction_id,
+                    corpId: ent.corp_id,
+                    targetEntityId: ent.target_id ? Number(ent.target_id) : 0,
+                    isShooting: ent.is_shooting,
+                    isMining: ent.is_mining,
+                    refineryActive: ent.refinery_active,
+                    shipyardQueueLen: ent.shipyard_queue_len,
+                    shipType: ent.ship_type,
+                    priceIron: ent.price_iron,
+                    priceTitanium: ent.price_titanium,
+                    priceCrystal: ent.price_crystal,
+                    qtyIron: ent.qty_iron,
+                    qtyTitanium: ent.qty_titanium,
+                    qtyCrystal: ent.qty_crystal,
+                    qtyIronPlates: ent.qty_iron_plates,
+                    qtyTitaniumPlates: ent.qty_titanium_plates,
+                    cargoCapacity: ent.cargo_capacity,
+                    cargoLoad: ent.cargo_load,
+                    credits: Number(ent.credits || 0),
+                    lastShotTime: old.lastShotTime || 0,
+                    lastUpdate: now
+                });
+            } else {
+                entities.set(id, {
+                    id: id,
+                    type: ent.entity_type,
+                    name: ent.name,
+                    targetX: ent.x,
+                    targetY: ent.y,
+                    targetRot: ent.rotation,
+                    prevX: ent.x,
+                    prevY: ent.y,
+                    prevRot: ent.rotation,
+                    currX: ent.x,
+                    currY: ent.y,
+                    currRot: ent.rotation,
+                    vx: ent.vx,
+                    vy: ent.vy,
+                    hp: ent.hp,
+                    maxHp: ent.max_hp,
+                    shield: ent.shield,
+                    maxShield: ent.max_shield,
+                    factionId: ent.faction_id,
+                    corpId: ent.corp_id,
+                    targetEntityId: ent.target_id ? Number(ent.target_id) : 0,
+                    isShooting: ent.is_shooting,
+                    lastShotTime: 0,
+                    isMining: ent.is_mining,
+                    refineryActive: ent.refinery_active,
+                    shipyardQueueLen: ent.shipyard_queue_len,
+                    shipType: ent.ship_type,
+                    priceIron: ent.price_iron,
+                    priceTitanium: ent.price_titanium,
+                    priceCrystal: ent.price_crystal,
+                    qtyIron: ent.qty_iron,
+                    qtyTitanium: ent.qty_titanium,
+                    qtyCrystal: ent.qty_crystal,
+                    qtyIronPlates: ent.qty_iron_plates,
+                    qtyTitaniumPlates: ent.qty_titanium_plates,
+                    cargoCapacity: ent.cargo_capacity,
+                    cargoLoad: ent.cargo_load,
+                    credits: Number(ent.credits || 0),
+                    lastUpdate: now
+                });
+                
+
+                let typeName = getEntityTypeName(ent.entity_type);
+                logEvent(`Появился объект: [${typeName}] ${ent.name} (ID: ${id})`, 'join');
+            }
+        });
+
+        // Clean up entities not in snapshot
+        for (let key of entities.keys()) {
+            if (!activeIds.has(key)) {
+                const ent = entities.get(key);
+                createExplosion(ent.currX, ent.currY, ent.type === 2 ? '#666' : '#ff5533');
+                logEvent(`Удален объект: ${ent.name} (ID: ${key})`, 'system');
+                entities.delete(key);
+                
+                if (key === targetID) {
+                    targetID = null;
+                    document.getElementById('target-panel').style.display = 'none';
+                }
+            }
+        }
+
+        document.getElementById('entity-count').textContent = entities.size;
+
+        // Keep camera centered on player and update UI stats
+        let p = null;
+        if (localPlayerID && entities.has(localPlayerID)) {
+            p = entities.get(localPlayerID);
+            if (p.factionId) {
+                localPlayerFactionID = p.factionId; // Save faction/team ID during combat
+            }
+        } else if (localPlayerID && localPlayerFactionID !== null) {
+            // Flagship destroyed, find first surviving ship of the same faction to follow
+            for (let ent of entities.values()) {
+                if (ent.factionId === localPlayerFactionID && ent.hp > 0) {
+                    p = ent;
+                    break;
+                }
+            }
+        }
+
+        if (p) {
+            // Camera position updates are now handled smoothly in the draw loop
+            
+            document.getElementById('player-pos-text').textContent = `X: ${p.currX.toFixed(1)}, Y: ${p.currY.toFixed(1)}`;
+            let speed = Math.sqrt(p.vx*p.vx + p.vy*p.vy);
+            document.getElementById('player-speed-text').textContent = speed.toFixed(1) + ' m/s';
+
+            // Update left panel Player Cargo & Credits
+            document.getElementById('credits-val').textContent = (p.credits || 0).toLocaleString() + ' c';
+            document.getElementById('cargo-val').textContent = `${p.cargoLoad || 0} / ${p.cargoCapacity || 100}`;
+            
+            // Sync playerInventoryCargo with local player snapshot
+            playerInventoryCargo['Iron'] = p.qtyIron || 0;
+            playerInventoryCargo['Titanium'] = p.qtyTitanium || 0;
+            playerInventoryCargo['Crystal'] = p.qtyCrystal || 0;
+            playerInventoryCargo['IronPlates'] = p.qtyIronPlates || 0;
+            playerInventoryCargo['TitaniumPlates'] = p.qtyTitaniumPlates || 0;
+
+            const detailsDiv = document.getElementById('cargo-details');
+            if (detailsDiv) {
+                detailsDiv.innerHTML = '';
+                const resources = {
+                    'Iron': p.qtyIron,
+                    'Titanium': p.qtyTitanium,
+                    'Crystal': p.qtyCrystal,
+                    'IronPlates': p.qtyIronPlates,
+                    'TitaniumPlates': p.qtyTitaniumPlates
+                };
+                for (let res in resources) {
+                    const qty = resources[res];
+                    if (qty > 0) {
+                        detailsDiv.innerHTML += `<div style="display:flex; justify-content:space-between;"><span>${res}:</span> <span>${qty}</span></div>`;
+                    }
+                }
+            }
+
+            // Update Fleet Cargo Panel (grid layout) on the right sidebar
+            if (typeof window.renderFleetCargo === 'function') {
+                window.renderFleetCargo();
+            }
+        }
+
+        // Detect player death (no more ships in the player's faction/fleet)
+        let hasAliveShip = false;
+        if (localPlayerID && localPlayerFactionID !== null) {
+            for (let ent of entities.values()) {
+                if (ent.factionId === localPlayerFactionID && ent.hp > 0) {
+                    hasAliveShip = true;
+                    break;
+                }
+            }
+        } else if (localPlayerID && entities.has(localPlayerID)) {
+            hasAliveShip = true;
+        }
+
+        if (localPlayerID && !isSpectator && !hasAliveShip) {
+            triggerPlayerDeath();
+        }
+    }
+
+    // Process actual player death
+    function triggerPlayerDeath() {
+        logEvent('Ваш корабль уничтожен! Переключение в режим наблюдателя.', 'combat');
+        isSpectator = true;
+        isShooting = false;
+        isMining = false;
+        targetID = null;
+        document.getElementById('player-status-text').textContent = 'Уничтожен';
+        document.getElementById('player-status-text').style.color = 'var(--accent-magenta)';
+        document.getElementById('target-panel').style.display = 'none';
+        clearInterval(inputInterval);
+        // Show respawn overlay after a delay
+        setTimeout(() => {
+            document.getElementById('play-overlay').style.display = 'flex';
+        }, 3000);
+    }
+
+    function getEntityTypeName(type) {
+        switch(type) {
+            case 0: return 'Игрок';
+            case 1: return 'NPC';
+            case 2: return 'Астероид';
+            case 3: return 'Снаряд';
+            case 4: return 'Станция';
+            case 5: return 'Врата';
+            case 6: return 'Контейнер';
+            default: return 'Неизвестно';
+        }
+    }
+
+    // Spawn bot client via REST API call
+    function spawnBot() {
+        logEvent('Запрос на спавн бота...', 'system');
+        fetch('/api/spawn-bot?system_id=' + currentSystemID, { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    logEvent(`Бот успешно заспавнен (PID: ${data.pid})`, 'join');
+                } else {
+                    logEvent('Ошибка спавна бота: ' + data.error, 'combat');
+                }
+            })
+            .catch(err => {
+                logEvent('Ошибка API: ' + err, 'combat');
+            });
+    }
+
+    // Switch systems tab
+    function switchSystem(sysID) {
+        currentSystemID = sysID;
+        entities.clear();
+        targetID = null;
+        document.getElementById('target-panel').style.display = 'none';
+        
+        document.getElementById('tab-sys-1').className = sysID === 1 ? 'system-tab active' : 'system-tab';
+        document.getElementById('tab-sys-2').className = sysID === 2 ? 'system-tab active' : 'system-tab';
+        
+        logEvent(`Переключение на систему ${sysID}...`, 'system');
+        
+        if (!isSpectator) {
+            isSpectator = true;
+            localPlayerID = null;
+            document.getElementById('player-status-text').textContent = 'Spectator';
+            document.getElementById('player-status-text').style.color = 'var(--text-muted)';
+            document.getElementById('play-overlay').style.display = 'flex';
+            clearInterval(inputInterval);
+        }
+    }
+
+    // Start playing (authentication)
+    function startPlay() {
+        const nameInput = document.getElementById('pilot-name').value.trim();
+        if (!nameInput) return;
+        localPlayerName = nameInput;
+        document.getElementById('play-overlay').style.display = 'none';
+        localPlayerFactionID = null;
+        
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+                action: 'auth',
+                login: localPlayerName
+            }));
+            
+            // Start inputs sending loops (20 times per second)
+            setupInputSending();
+        } else {
+            alert('Шлюз отключен. Попробуйте еще раз.');
+            document.getElementById('play-overlay').style.display = 'flex';
+        }
+    }
+
+    // Start spectating without playing
+    function startSpectate() {
+        isSpectator = true;
+        document.getElementById('play-overlay').style.display = 'none';
+        logEvent('Режим наблюдения активирован', 'system');
+    }
+
+    // Send movement commands to server (optimized to send changes only)
+    function setupInputSending() {
+        if (inputInterval) clearInterval(inputInterval);
+        lastSentMove = { x: 0, y: 0 };
+        
+        inputInterval = setInterval(() => {
+            if (isSpectator || !localPlayerID || !socket || socket.readyState !== WebSocket.OPEN) return;
+
+            let vx = 0;
+            let vy = 0;
+            const force = 120.0; // Max velocity command thrust force
+
+            // Keyboard overrides mouse navigation
+            if (keysPressed.w || keysPressed.s || keysPressed.a || keysPressed.d) {
+                mouseTargetPos = null;
+            }
+
+            if (mouseTargetPos) {
+                const player = entities.get(localPlayerID);
+                if (player) {
+                    let dx = mouseTargetPos.x - player.currX;
+                    let dy = mouseTargetPos.y - player.currY;
+                    let dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist > 10) {
+                        let angle = Math.atan2(dy, dx);
+                        vx = Math.cos(angle) * force;
+                        vy = Math.sin(angle) * force;
+                    } else {
+                        mouseTargetPos = null; // Arrived!
+                    }
+                }
+            } else {
+                if (keysPressed.w) vy -= force;
+                if (keysPressed.s) vy += force;
+                if (keysPressed.a) vx -= force;
+                if (keysPressed.d) vx += force;
+            }
+
+            // Only send if the movement intent vectors changed (avoids packet flood)
+            if (vx !== lastSentMove.x || vy !== lastSentMove.y) {
+                socket.send(JSON.stringify({
+                    action: 'move',
+                    x: vx,
+                    y: vy
+                }));
+                lastSentMove.x = vx;
+                lastSentMove.y = vy;
+            }
+        }, 50); // 20 PPS matching tickrate
+    }
+
+    // Focus Camera on Player
+    function focusCamera() {
+        cameraFollowPlayer = true;
+        let p = null;
+        if (localPlayerID && entities.has(localPlayerID)) {
+            p = entities.get(localPlayerID);
+        } else if (localPlayerID && localPlayerFactionID !== null) {
+            for (let ent of entities.values()) {
+                if (ent.factionId === localPlayerFactionID && ent.hp > 0) {
+                    p = ent;
+                    break;
+                }
+            }
+        }
+        if (p) {
+            camera.x = p.currX;
+            camera.y = p.currY;
+        }
+        logEvent('Камера сфокусирована на корабле', 'system');
+    }
+
+    // Key listeners (Using layout-independent code)
+    window.addEventListener('keydown', (e) => {
+        // Stop key events bubbling up when writing name
+        if (document.activeElement.tagName === 'INPUT') return;
+
+        if (e.code === 'KeyW' || e.code === 'ArrowUp') keysPressed.w = true;
+        if (e.code === 'KeyS' || e.code === 'ArrowDown') keysPressed.s = true;
+        if (e.code === 'KeyA' || e.code === 'ArrowLeft') keysPressed.a = true;
+        if (e.code === 'KeyD' || e.code === 'ArrowRight') keysPressed.d = true;
+
+        // Center camera on ship
+        if (e.code === 'KeyC') {
+            focusCamera();
+        }
+
+        // Space to toggle fire on target
+        if (e.code === 'Space' && targetID) {
+            e.preventDefault();
+            toggleShoot();
+        }
+        // F key to toggle mining on target
+        if (e.code === 'KeyF') {
+            if (targetID) toggleMine();
+        }
+    });
+
+    window.addEventListener('keyup', (e) => {
+        if (e.code === 'KeyW' || e.code === 'ArrowUp') keysPressed.w = false;
+        if (e.code === 'KeyS' || e.code === 'ArrowDown') keysPressed.s = false;
+        if (e.code === 'KeyA' || e.code === 'ArrowLeft') keysPressed.a = false;
+        if (e.code === 'KeyD' || e.code === 'ArrowRight') keysPressed.d = false;
+    });
+
+    // Zoom handler (Mouse wheel)
+    canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const zoomFactor = 1.15;
+        if (e.deltaY < 0) {
+            camera.zoom = Math.min(3.5, camera.zoom * zoomFactor);
+        } else {
+            camera.zoom = Math.max(0.15, camera.zoom / zoomFactor);
+        }
+    }, { passive: false });
+
+    // Drag / Pan map handlers
+    let clickStartX = 0;
+    let clickStartY = 0;
+    let hasMoved = false;
+
+    canvas.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        clickStartX = e.clientX;
+        clickStartY = e.clientY;
+        dragStart.x = e.clientX;
+        dragStart.y = e.clientY;
+        cameraStart.x = camera.x;
+        cameraStart.y = camera.y;
+        hasMoved = false;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        const dx = e.clientX - dragStart.x;
+        const dy = e.clientY - dragStart.y;
+        
+        // If moved more than 3 pixels, treat it as panning/dragging rather than clicking
+        if (Math.abs(e.clientX - clickStartX) > 3 || Math.abs(e.clientY - clickStartY) > 3) {
+            hasMoved = true;
+        }
+
+        // Drag camera in opposite direction scaled by zoom
+        camera.x = cameraStart.x - dx / camera.zoom;
+        camera.y = cameraStart.y - dy / camera.zoom;
+        cameraFollowPlayer = false;
+    });
+
+    window.addEventListener('mouseup', (e) => {
+        isDragging = false;
+    });
+
+    // Handle mouse clicks for targeting and autopilot movement
+    canvas.addEventListener('click', (e) => {
+        if (hasMoved) return; // Ignore targeting/movement if we were dragging/panning
+
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+
+        // Convert click screen space to world space
+        const worldX = (mx - canvas.width / 2) / camera.zoom + camera.x;
+        const worldY = (my - canvas.height / 2) / camera.zoom + camera.y;
+
+        let clickedEntity = null;
+        let minDist = 40.0 / camera.zoom; // Click range threshold in pixels
+
+        for (let ent of entities.values()) {
+            // Do not target ourselves
+            if (ent.id === localPlayerID) continue;
+
+            let dx = ent.currX - worldX;
+            let dy = ent.currY - worldY;
+            let dist = Math.sqrt(dx*dx + dy*dy);
+            
+            if (dist < minDist) {
+                minDist = dist;
+                clickedEntity = ent;
+            }
+        }
+
+        if (clickedEntity) {
+            // Clicked on an object: select target but do not move the fleet
+            targetID = clickedEntity.id;
+            updateTargetUI(clickedEntity);
+            logEvent(`Цель выбрана: ${clickedEntity.name} (ID: ${clickedEntity.id})`, 'system');
+        } else {
+            // Clicked on empty space: clear target and trigger movement autopilot
+            targetID = null;
+            document.getElementById('target-panel').style.display = 'none';
+            lastQueriedStationID = null;
+
+            if (!isSpectator && localPlayerID) {
+                mouseTargetPos = { x: worldX, y: worldY };
+                clickMarker = {
+                    x: worldX,
+                    y: worldY,
+                    time: Date.now(),
+                    duration: 600
+                };
+            }
+        }
+    });
+
+    // Double click map to center camera
+    canvas.addEventListener('dblclick', () => {
+        focusCamera();
+    });
+
+    function toggleShoot() {
+        if (!targetID || isSpectator) return;
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            logEvent('Нет соединения с сервером!', 'combat');
+            return;
+        }
+        
+        isShooting = !isShooting;
+        
+        socket.send(JSON.stringify({
+            action: 'shoot',
+            active: isShooting,
+            target_id: Number(targetID)
+        }));
+        
+        logEvent(isShooting ? `Активация лазеров по цели ID: ${targetID}` : 'Боевые системы отключены', 'combat');
+    }
+
+    function toggleMine() {
+        if (!targetID || isSpectator) return;
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            logEvent('Нет соединения с сервером!', 'mine');
+            return;
+        }
+        
+        isMining = !isMining;
+        
+        socket.send(JSON.stringify({
+            action: 'mine',
+            active: isMining,
+            target_id: Number(targetID)
+        }));
+
+        logEvent(isMining ? `Запуск бурения астероида ID: ${targetID}` : 'Буровые системы отключены', 'mine');
+    }
+
+    function attackTargetFleet() {
+        if (!targetID || isSpectator) return;
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            logEvent('Нет соединения с сервером!', 'combat');
+            return;
+        }
+        
+        socket.send(JSON.stringify({
+            action: 'shoot',
+            active: true,
+            target_id: Number(targetID)
+        }));
+        
+        logEvent(`Начата атака на флот: ${targetID}!`, 'combat');
+    }
+
+    window.showJoinCombatDialog = function() {
+        if (!targetID || isSpectator) return;
+        const target = entities.get(targetID);
+        if (!target || target.type !== 7) return;
+
+        let choice = prompt(
+            "Вступить в бой!\n\n" +
+            "Выберите сторону конфликта:\n" +
+            "0 — Каждый сам за себя (FFA)\n" +
+            `1 — Поддержать флот Атакующих (ID: ${target.qtyIron})\n` +
+            `2 — Поддержать флот Защищающихся (ID: ${target.qtyTitanium})\n\n` +
+            "Введите 0, 1 или 2:",
+            "0"
+        );
+
+        if (choice === null) return;
+        choice = choice.trim();
+
+        let alignWith = 0;
+        if (choice === "1") {
+            alignWith = target.qtyIron;
+        } else if (choice === "2") {
+            alignWith = target.qtyTitanium;
+        } else if (choice !== "0") {
+            alert("Неверный выбор!");
+            return;
+        }
+
+        // Проверяем дистанцию (нужно подлететь вплотную)
+        const player = entities.get(localPlayerID);
+        if (player) {
+            let dx = player.currX - target.currX;
+            let dy = player.currY - target.currY;
+            let dist = Math.sqrt(dx*dx + dy*dy);
+            if (dist > 130.0) {
+                alert("Ошибка: Вы слишком далеко от сражения! Подлетите ближе.");
+                return;
+            }
+        }
+
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+                action: 'join_combat',
+                target_id: Number(target.targetEntityId),
+                align_with_fleet_id: Number(alignWith)
+            }));
+            logEvent(`Запрос вступления в бой ${target.targetEntityId} отправлен (выбор: ${choice})`, 'system');
+        }
+    };
+
+    // Target HUD update
+    function updateTargetUI(ent) {
+        document.getElementById('target-panel').style.display = 'flex';
+        document.getElementById('target-name').textContent = ent.name;
+        
+        let typeStr = getEntityTypeName(ent.type);
+        if ((ent.type === 0 || ent.type === 1) && ent.shipType) {
+            typeStr += ` (${ent.shipType.toUpperCase()})`;
+        }
+        document.getElementById('target-id-label').textContent = `ID: ${ent.id} | TYPE: ${typeStr}`;
+        
+        const corpNames = {
+            1: 'Galactic Guardians',
+            2: 'Pirates',
+            3: 'Miners'
+        };
+        const corpLabel = document.getElementById('target-corp-label');
+        if (corpLabel) {
+            let corpId = ent.corpId;
+            if (corpId && corpId > 0) {
+                corpLabel.textContent = corpNames[corpId] || `Player Corp #${corpId}`;
+            } else {
+                corpLabel.textContent = 'Independent';
+            }
+        }
+        
+        // HP bar
+        const hpSec = document.getElementById('target-hp-sec');
+        if (ent.maxHp > 0) {
+            hpSec.style.display = 'block';
+            document.getElementById('target-hp-label').textContent = `${ent.hp}/${ent.maxHp}`;
+            let hpPct = (ent.hp / ent.maxHp) * 100;
+            document.getElementById('target-hp-bar').style.width = Math.max(0, Math.min(100, hpPct)) + '%';
+        } else {
+            hpSec.style.display = 'none';
+        }
+
+        // Shield bar (Asteroids don't have shield)
+        if (ent.maxShield > 0) {
+            document.getElementById('target-shield-sec').style.display = 'block';
+            document.getElementById('target-shield-label').textContent = `${ent.shield}/${ent.maxShield}`;
+            let shieldPct = (ent.shield / ent.maxShield) * 100;
+            document.getElementById('target-shield-bar').style.width = Math.max(0, Math.min(100, shieldPct)) + '%';
+        } else {
+            document.getElementById('target-shield-sec').style.display = 'none';
+        }
+
+        // Cargo occupancy progress bar & details
+        const cargoSec = document.getElementById('target-cargo-sec');
+        const targetDetailsDiv = document.getElementById('target-cargo-details');
+        
+        if ((ent.type === 0 || ent.type === 1 || ent.type === 6) && ent.cargoCapacity > 0) {
+            cargoSec.style.display = 'block';
+            
+            // Populate details
+            if (targetDetailsDiv) {
+                targetDetailsDiv.innerHTML = '';
+                const resources = {
+                    'Iron': ent.qtyIron,
+                    'Titanium': ent.qtyTitanium,
+                    'Crystal': ent.qtyCrystal,
+                    'IronPlates': ent.qtyIronPlates,
+                    'TitaniumPlates': ent.qtyTitaniumPlates,
+                    'SiliconWafers': ent.qtySiliconWafers,
+                    'FuelCells': ent.qtyFuelCells,
+                    'Microchips': ent.qtyMicrochips,
+                    'EnergyCoils': ent.qtyEnergyCoils,
+                    'Laser Cannon': ent.qtyLaserCannon,
+                    'Mining Laser': ent.qtyMiningLaser
+                };
+                for (let res in resources) {
+                    const qty = resources[res];
+                    if (qty > 0) {
+                        targetDetailsDiv.innerHTML += `<div style="display:flex; justify-content:space-between;"><span>${res}:</span> <span>${qty}</span></div>`;
+                    }
+                }
+            }
+            if (ent.type === 6) {
+                document.getElementById('target-cargo-label').textContent = `${ent.cargoLoad || 0} items`;
+                document.getElementById('target-cargo-bar').parentNode.style.display = 'none';
+            } else {
+                document.getElementById('target-cargo-label').textContent = `${ent.cargoLoad || 0}/${ent.cargoCapacity}`;
+                document.getElementById('target-cargo-bar').parentNode.style.display = 'block';
+                let cargoPct = ((ent.cargoLoad || 0) / ent.cargoCapacity) * 100;
+                document.getElementById('target-cargo-bar').style.width = Math.max(0, Math.min(100, cargoPct)) + '%';
+            }
+        } else {
+            cargoSec.style.display = 'none';
+        }
+
+        // Credits display (only show for Players/NPCs)
+        const creditsSec = document.getElementById('target-credits-sec');
+        if (ent.type === 0 || ent.type === 1) {
+            creditsSec.style.display = 'block';
+            document.getElementById('target-credits-label').textContent = (ent.credits || 0).toLocaleString();
+        } else {
+            creditsSec.style.display = 'none';
+        }
+
+        // Hide btn-attack-fleet by default
+        const btnAttack = document.getElementById('btn-attack-fleet');
+        if (btnAttack) btnAttack.style.display = 'none';
+
+        // Check if player can manually attack target fleet (Player/NPC) on main map
+        if (currentSystemID < 10000 && localPlayerID && entities.has(localPlayerID) && ent.id !== localPlayerID && (ent.type === 0 || ent.type === 1)) {
+            const player = entities.get(localPlayerID);
+            let dx = player.currX - ent.currX;
+            let dy = player.currY - ent.currY;
+            let dist = Math.sqrt(dx*dx + dy*dy);
+            if (btnAttack) {
+                btnAttack.style.display = 'block';
+                btnAttack.disabled = false;
+                btnAttack.style.opacity = '1.0';
+                btnAttack.style.cursor = 'pointer';
+                btnAttack.style.background = 'var(--accent-orange)';
+                btnAttack.textContent = 'Attack Fleet';
+            }
+        }
+
+        // Show/hide combat vs mine buttons based on target type
+        if (ent.type === 2) {
+            document.getElementById('btn-shoot').style.display = 'none';
+            document.getElementById('btn-mine').style.display = 'block';
+            document.getElementById('btn-join-combat').style.display = 'none';
+            document.getElementById('station-panel').style.display = 'none';
+        } else if (ent.type === 4) { // STATION
+            document.getElementById('btn-shoot').style.display = 'none';
+            document.getElementById('btn-mine').style.display = 'none';
+            document.getElementById('btn-join-combat').style.display = 'none';
+            
+            // Check distance to station
+            let isNear = false;
+            if (localPlayerID && entities.has(localPlayerID)) {
+                const player = entities.get(localPlayerID);
+                let dx = player.currX - ent.currX;
+                let dy = player.currY - ent.currY;
+                let dist = Math.sqrt(dx*dx + dy*dy);
+                if (dist <= 250.0) {
+                    isNear = true;
+                }
+            }
+
+            const stationPanel = document.getElementById('station-panel');
+            if (isNear) {
+                stationPanel.style.display = 'flex';
+                
+                // Query vaults if new station selected
+                if (lastQueriedStationID !== ent.id) {
+                    lastQueriedStationID = ent.id;
+                    personalVaultCargo = {};
+                    corporateVaultCargo = {};
+                    if (socket && socket.readyState === WebSocket.OPEN) {
+                        socket.send(JSON.stringify({
+                            action: 'vault_action',
+                            target_id: Number(ent.id),
+                            action_type: 'query'
+                        }));
+                    }
+                }
+                
+                // Update refinery status
+                const refStatus = document.getElementById('refinery-status');
+                if (refStatus) {
+                    refStatus.textContent = ent.refineryActive ? 'ACTIVE' : 'INACTIVE';
+                    refStatus.style.color = ent.refineryActive ? 'var(--accent-green)' : 'var(--accent-magenta)';
+                }
+                
+                // Update shipyard status
+                const syQueue = document.getElementById('shipyard-queue');
+                if (syQueue) {
+                    syQueue.textContent = `${ent.shipyardQueueLen || 0} orders`;
+                }
+                
+                // Populate market table (Trade stock only)
+                const tableBody = document.getElementById('market-table-body');
+                if (tableBody) {
+                    const stationItems = [
+                        { name: 'Iron', qty: ent.qtyIron || 0 },
+                        { name: 'Titanium', qty: ent.qtyTitanium || 0 },
+                        { name: 'Crystal', qty: ent.qtyCrystal || 0 },
+                        { name: 'RareGas', qty: ent.qtyRareGas || 0 },
+                        { name: 'IronPlates', qty: ent.qtyIronPlates || 0 },
+                        { name: 'TitaniumPlates', qty: ent.qtyTitaniumPlates || 0 },
+                        { name: 'SiliconWafers', qty: ent.qtySiliconWafers || 0 },
+                        { name: 'FuelCells', qty: ent.qtyFuelCells || 0 },
+                        { name: 'Microchips', qty: ent.qtyMicrochips || 0 },
+                        { name: 'EnergyCoils', qty: ent.qtyEnergyCoils || 0 },
+                        { name: 'Laser Cannon', qty: ent.qtyLaserCannon || 0 },
+                        { name: 'Mining Laser', qty: ent.qtyMiningLaser || 0 }
+                    ];
+
+                    let html = '';
+                    stationItems.forEach(item => {
+                        if (item.qty > 0) {
+                            html += `
+                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <td style="padding: 4px 0;">${item.name}</td>
+                                    <td style="text-align: right; padding: 4px 0; font-weight: bold; color: var(--accent-cyan);">${item.qty}</td>
+                                </tr>
+                            `;
+                        }
+                    });
+                    tableBody.innerHTML = html;
+                }
+
+                // Populate Personal Storage grid
+                if (typeof window.renderPersonalStorage === 'function') {
+                    window.renderPersonalStorage();
+                }
+
+                // Populate Corporate Vault table
+                const cvTableBody = document.getElementById('corporate-vault-table-body');
+                if (cvTableBody) {
+                    const player = localPlayerID ? entities.get(localPlayerID) : null;
+                    const resourcesList = ['Iron', 'Titanium', 'Crystal', 'RareGas', 'IronPlates', 'TitaniumPlates'];
+                    let html = '';
+                    resourcesList.forEach(res => {
+                        let qtyInShip = playerInventoryCargo[res] || 0;
+                        const qtyInVault = corporateVaultCargo[res] || 0;
+                        const canDeposit = qtyInShip > 0;
+                        const canWithdraw = qtyInVault > 0;
+
+                        html += `
+                            <tr>
+                                <td>${res}</td>
+                                <td>${qtyInShip}</td>
+                                <td>${qtyInVault}</td>
+                                <td style="text-align: right;">
+                                    <button class="btn btn-secondary vault-btn" data-vault-action="deposit" data-vault-type="corporate" data-vault-resource="${res}" style="padding:1px 3px; font-size:9px; margin:0; display:inline-block; width:auto;${canDeposit ? '' : ' opacity:0.4; cursor:not-allowed;'}" ${canDeposit ? '' : 'disabled'}>Dep</button>
+                                    <button class="btn btn-secondary vault-btn" data-vault-action="withdraw" data-vault-type="corporate" data-vault-resource="${res}" style="padding:1px 3px; font-size:9px; margin:0; display:inline-block; width:auto;${canWithdraw ? '' : ' opacity:0.4; cursor:not-allowed;'}" ${canWithdraw ? '' : 'disabled'}>With</button>
+                                </td>
+                            </tr>
+                        `;
+                    });
+                    cvTableBody.innerHTML = html;
+                }
+
+            } else {
+                stationPanel.style.display = 'none';
+            }
+        } else if (ent.type === 7) { // COMBAT MARKER
+            document.getElementById('btn-shoot').style.display = 'none';
+            document.getElementById('btn-mine').style.display = 'none';
+            document.getElementById('btn-join-combat').style.display = 'block';
+            document.getElementById('station-panel').style.display = 'none';
+        } else {
+            document.getElementById('btn-shoot').style.display = 'block';
+            document.getElementById('btn-mine').style.display = 'none';
+            document.getElementById('btn-join-combat').style.display = 'none';
+            document.getElementById('station-panel').style.display = 'none';
+        }
+    }
+
+    // Visual Log updates
+    function logEvent(text, category) {
+        const box = document.getElementById('event-logs');
+        const entry = document.createElement('div');
+        entry.className = `log-entry log-${category}`;
+        entry.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+        box.appendChild(entry);
+        box.scrollTop = box.scrollHeight;
+    }
+
+    // Visual effects helpers
+    function createDamageFloat(x, y, text, color) {
+        damageNumbers.push(new DamageNumber(x, y - 20, text, color));
+    }
+
+    // Sparks when hit
+    function createSparks(x, y, color) {
+        for (let i = 0; i < 8; i++) {
+            let angle = Math.random() * Math.PI * 2;
+            let speed = 1.0 + Math.random() * 2.5;
+            particles.push(new Particle(
+                x, y,
+                Math.cos(angle) * speed,
+                Math.sin(angle) * speed,
+                color,
+                1.5 + Math.random() * 1.5,
+                0.3 + Math.random() * 0.4
+            ));
+        }
+    }
+
+    // Explosion when entity dies
+    function createExplosion(x, y, color) {
+        for (let i = 0; i < 30; i++) {
+            let angle = Math.random() * Math.PI * 2;
+            let speed = 0.5 + Math.random() * 4.0;
+            particles.push(new Particle(
+                x, y,
+                Math.cos(angle) * speed,
+                Math.sin(angle) * speed,
+                color,
+                2.0 + Math.random() * 3.0,
+                0.5 + Math.random() * 0.8
+            ));
+        }
+    }
+
+    // Check if an entity is near any jump gate
+
+
+    // Linear interpolation helper
+    function lerp(start, end, amt) {
+        return (1 - amt) * start + amt * end;
+    }
+
+    // MAIN RENDER LOOP
+    function draw() {
+        // Calculate Frame rate
+        frameCount++;
+        const now = Date.now();
+        if (now - lastFPSUpdate >= 1000) {
+            fps = frameCount;
+            frameCount = 0;
+            lastFPSUpdate = now;
+            document.getElementById('fps-val').textContent = fps + ' FPS';
+        }
+
+        // Clear Canvas
+        ctx.fillStyle = 'var(--bg-color)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Update target HUD values if target panel is open
+        if (targetID && entities.has(targetID)) {
+            updateTargetUI(entities.get(targetID));
+        }
+
+        // 1. Interpolate and update entities state first, so their current positions are up-to-date
+        for (let ent of entities.values()) {
+            const timePassed = now - ent.lastUpdate;
+            const t = Math.min(1.0, timePassed / 50.0); // 50ms matching the server tick
+            
+            ent.currX = lerp(ent.prevX, ent.targetX, t);
+            ent.currY = lerp(ent.prevY, ent.targetY, t);
+            
+            let diff = ent.targetRot - ent.prevRot;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            ent.currRot = ent.prevRot + diff * t;
+            
+            // Engine trails
+            if (ent.type === 0 || ent.type === 1) { // Ship
+                let velocity = Math.sqrt(ent.vx*ent.vx + ent.vy*ent.vy);
+                if (velocity > 5) {
+                    let trailColor = ent.type === 0 ? 'rgba(57, 255, 20, 0.4)' : 'rgba(255, 159, 28, 0.4)';
+                    if (ent.id === localPlayerID) trailColor = 'rgba(0, 242, 254, 0.4)';
+                    
+                    // Flame particle offset
+                    let ox = ent.currX - Math.cos(ent.currRot) * 15;
+                    let oy = ent.currY - Math.sin(ent.currRot) * 15;
+                    particles.push(new Particle(
+                        ox + (Math.random()-0.5)*4, oy + (Math.random()-0.5)*4,
+                        -Math.cos(ent.currRot) * 1.5 + (Math.random()-0.5)*0.5,
+                        -Math.sin(ent.currRot) * 1.5 + (Math.random()-0.5)*0.5,
+                        trailColor,
+                        2 + Math.random()*2,
+                        0.2 + Math.random()*0.3
+                    ));
+                }
+            }
+        }
+
+        // 2. Smoothly follow the player ship with the camera using updated interpolated coordinates
+        if (cameraFollowPlayer) {
+            let followed = null;
+            if (localPlayerID && entities.has(localPlayerID)) {
+                followed = entities.get(localPlayerID);
+            } else if (localPlayerID && localPlayerFactionID !== null) {
+                for (let ent of entities.values()) {
+                    if (ent.factionId === localPlayerFactionID && ent.hp > 0) {
+                        followed = ent;
+                        break;
+                    }
+                }
+            }
+
+            if (followed) {
+                const dx = followed.currX - camera.x;
+                const dy = followed.currY - camera.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                if (dist > 1000) {
+                    // Snap camera on large distances (e.g. respawn, jump)
+                    camera.x = followed.currX;
+                    camera.y = followed.currY;
+                } else {
+                    // Smooth tracking
+                    camera.x = lerp(camera.x, followed.currX, 0.1);
+                    camera.y = lerp(camera.y, followed.currY, 0.1);
+                }
+            }
+        }
+
+        ctx.save();
+        // Translate context to center camera
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.scale(camera.zoom, camera.zoom);
+        ctx.translate(-camera.x, -camera.y);
+
+        // 3. Draw parallax stars relative to camera position
+        drawStars();
+
+        // Draw mouse click marker if active
+        if (clickMarker) {
+            let elapsed = Date.now() - clickMarker.time;
+            if (elapsed < clickMarker.duration) {
+                let progress = elapsed / clickMarker.duration;
+                let radius = 4 + progress * 24;
+                let alpha = 1.0 - progress;
+                ctx.save();
+                ctx.strokeStyle = `rgba(0, 242, 254, ${alpha})`;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(clickMarker.x, clickMarker.y, radius, 0, Math.PI * 2);
+                ctx.stroke();
+                
+                // Draw inner dot
+                ctx.fillStyle = `rgba(0, 242, 254, ${alpha * 0.7})`;
+                ctx.beginPath();
+                ctx.arc(clickMarker.x, clickMarker.y, 3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            } else {
+                clickMarker = null;
+            }
+        }
+
+        // 4. Draw Laser / Mining beams
+        drawBeams();
+
+        // 5. Draw Entities
+        for (let ent of entities.values()) {
+            drawEntity(ent);
+        }
+
+        // 6. Draw particles
+        particles = particles.filter(p => p.life > 0);
+        particles.forEach(p => {
+            p.update();
+            p.draw(ctx);
+        });
+
+        // 7. Draw damage numbers
+        damageNumbers = damageNumbers.filter(d => d.life > 0);
+        damageNumbers.forEach(d => {
+            d.update();
+            d.draw(ctx);
+        });
+
+        ctx.restore();
+
+        // Continue Loop
+        requestAnimationFrame(draw);
+    }
+
+    // Space Grid drawing
+    function drawSpaceGrid() {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(0, 242, 254, 0.04)';
+        ctx.lineWidth = 1;
+        
+        let gridSize = 120 * camera.zoom;
+        let startX = ((-camera.x * camera.zoom) % gridSize) + canvas.width / 2;
+        let startY = ((-camera.y * camera.zoom) % gridSize) + canvas.height / 2;
+
+        for (let x = startX - gridSize; x < canvas.width + gridSize; x += gridSize) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, canvas.height);
+            ctx.stroke();
+        }
+
+        for (let y = startY - gridSize; y < canvas.height + gridSize; y += gridSize) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(canvas.width, y);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+
+    // Parallax wrapping background stars
+    let starsSeed = [];
+    for (let i = 0; i < 200; i++) {
+        starsSeed.push({
+            x: Math.random() * 4000 - 2000,
+            y: Math.random() * 4000 - 2000,
+            size: 0.5 + Math.random() * 1.5,
+            opacity: 0.15 + Math.random() * 0.7
+        });
+    }
+
+    function drawStars() {
+        ctx.save();
+        ctx.fillStyle = 'white';
+        
+        starsSeed.forEach(star => {
+            // Apply parallax scroll: stars move at 10% of camera speed
+            let sx = star.x - camera.x * 0.1;
+            let sy = star.y - camera.y * 0.1;
+            
+            // Loop star position when camera scrolls past bounds
+            const size = 4000;
+            const halfSize = size / 2;
+            
+            sx = ((sx + halfSize) % size);
+            if (sx < 0) sx += size;
+            sx -= halfSize;
+            sx += camera.x;
+
+            sy = ((sy + halfSize) % size);
+            if (sy < 0) sy += size;
+            sy -= halfSize;
+            sy += camera.y;
+
+            ctx.globalAlpha = star.opacity;
+            ctx.beginPath();
+            ctx.arc(sx, sy, star.size, 0, Math.PI * 2);
+            ctx.fill();
+        });
+        ctx.restore();
+    }
+
+    // Draw active mining and weapon laser beams
+    function drawBeams() {
+        ctx.save();
+        
+        for (let ent of entities.values()) {
+            if (ent.targetEntityId && entities.has(ent.targetEntityId)) {
+                const target = entities.get(ent.targetEntityId);
+                
+                if (ent.isMining) {
+                    let pulse = 2 + Math.sin(Date.now() / 30) * 1.5;
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = 'var(--accent-cyan)';
+                    
+                    ctx.strokeStyle = 'rgba(0, 242, 254, 0.4)';
+                    ctx.lineWidth = pulse + 4;
+                    ctx.beginPath();
+                    ctx.moveTo(ent.currX, ent.currY);
+                    ctx.lineTo(target.currX, target.currY);
+                    ctx.stroke();
+
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = pulse;
+                    ctx.stroke();
+                    
+                    if (Math.random() < 0.35) {
+                        let tVal = Math.random();
+                        let px = lerp(target.currX, ent.currX, tVal);
+                        let py = lerp(target.currY, ent.currY, tVal);
+                        particles.push(new Particle(
+                            px, py,
+                            (Math.random()-0.5)*1, (Math.random()-0.5)*1,
+                            'var(--accent-cyan)',
+                            1.0, 0.2
+                        ));
+                    }
+                }
+                
+                let shotElapsed = Date.now() - (ent.lastShotTime || 0);
+                if (ent.isShooting) {
+                    ent.lastShotTime = Date.now();
+                    shotElapsed = 0;
+                }
+
+                if (shotElapsed < 150) {
+                    let beamColor = 'var(--accent-magenta)';
+                    let innerColor = '#ff3385';
+                    if (currentSystemID >= 10000) {
+                        beamColor = getTeamColor(ent.factionId);
+                        innerColor = '#ffffff';
+                    }
+                    
+                    let opacity = 1.0 - shotElapsed / 150.0;
+                    
+                    ctx.save();
+                    ctx.shadowBlur = 12;
+                    ctx.shadowColor = beamColor;
+                    
+                    ctx.strokeStyle = beamColor;
+                    ctx.globalAlpha = 0.4 * opacity;
+                    ctx.lineWidth = 4;
+                    ctx.beginPath();
+                    ctx.moveTo(ent.currX, ent.currY);
+                    ctx.lineTo(target.currX, target.currY);
+                    ctx.stroke();
+
+                    ctx.globalAlpha = 1.0 * opacity;
+                    ctx.strokeStyle = innerColor;
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(ent.currX, ent.currY);
+                    ctx.lineTo(target.currX, target.currY);
+                    ctx.stroke();
+                    ctx.restore();
+                    
+                    // Spark effect at target hit point
+                    if (Math.random() < 0.3) {
+                        particles.push(new Particle(
+                            target.currX, target.currY,
+                            (Math.random() - 0.5) * 4,
+                            (Math.random() - 0.5) * 4,
+                            beamColor,
+                            1.0 + Math.random() * 1.5,
+                            0.2 + Math.random() * 0.3
+                        ));
+                    }
+                }
+            }
+        }
+        ctx.restore();
+    }
+
+    // Draw single entity
+    function drawEntity(ent) {
+        ctx.save();
+        ctx.translate(ent.currX, ent.currY);
+
+        // Draw selection ring if targeted
+        if (ent.id === targetID) {
+            ctx.strokeStyle = 'var(--accent-magenta)';
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = 'var(--accent-magenta)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(0, 0, getEntityRadius(ent) + 8, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.shadowBlur = 0; // reset
+        }
+
+        // Draw the entity shape
+        if (currentSystemID >= 10000 && (ent.type === 0 || ent.type === 1)) {
+            // В инстансе боя окрашиваем корабли по цветам их команд
+            drawShipShape(ent, getTeamColor(ent.factionId));
+        } else {
+            switch (ent.type) {
+                case 0: // PLAYER
+                    drawShipShape(ent, ent.id === localPlayerID ? 'var(--accent-cyan)' : 'var(--accent-green)');
+                    break;
+                case 1: // NPC
+                    let npcColor = 'var(--accent-orange)'; // miner / friendly
+                    if (ent.name.includes('Pirate') || ent.name.includes('Outlaw')) {
+                        npcColor = 'var(--accent-magenta)'; // hostile
+                    } else if (ent.name.includes('Patrol') || ent.name.includes('Enforcer')) {
+                        npcColor = 'var(--accent-blue)'; // patrol
+                    }
+                    drawShipShape(ent, npcColor);
+                    break;
+                case 2: // ASTEROID
+                    drawAsteroidShape(ent);
+                    break;
+                case 3: // PROJECTILE
+                    break;
+                case 4: // STATION
+                    drawStationShape(ent);
+                    break;
+                case 5: // JUMP GATE
+                    drawJumpGateShape(ent);
+                    break;
+                case 6: // LOOT CONTAINER
+                    drawLootContainerShape(ent);
+                    break;
+                case 7: // COMBAT MARKER
+                    drawCombatMarkerShape(ent);
+                    break;
+            }
+        }
+
+        // Draw Entity Label Text (except projectiles)
+        if (ent.type !== 3) {
+            ctx.font = "bold 9px 'Orbitron', sans-serif";
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'center';
+            ctx.shadowColor = 'black';
+            ctx.shadowBlur = 3;
+            
+            // Name Tag
+            ctx.fillText(ent.name, 0, -getEntityRadius(ent) - 15);
+            
+            // Render small stats bar underneath Name Tag (if HP > 0)
+            if (ent.maxHp > 0 && ent.type !== 2 && ent.type !== 7) {
+                let width = 30;
+                let height = 3;
+                let rx = -width / 2;
+                let ry = -getEntityRadius(ent) - 10;
+                
+                // BG
+                ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                ctx.fillRect(rx, ry, width, height);
+                
+                // HP
+                let hpWidth = (ent.hp / ent.maxHp) * width;
+                ctx.fillStyle = 'var(--accent-green)';
+                ctx.fillRect(rx, ry, hpWidth, height);
+                
+                // Shield
+                if (ent.maxShield > 0) {
+                    let shWidth = (ent.shield / ent.maxShield) * width;
+                    ctx.fillStyle = 'var(--accent-cyan)';
+                    ctx.fillRect(rx, ry + 3, shWidth, height - 1);
+                }
+            }
+        }
+
+        ctx.restore();
+    }
+
+    function getTeamColor(teamId) {
+        switch (teamId) {
+            case 1: return '#00f2fe'; // Team 1: Cyan
+            case 2: return '#ffaa00'; // Team 2: Orange/Gold
+            case 3: return '#ff007f'; // Team 3: Magenta
+            case 4: return '#10b981'; // Team 4: Green
+            case 5: return '#eab308'; // Team 5: Yellow
+            default: return '#ffffff';
+        }
+    }
+
+    function getEntityRadius(arg) {
+        let type = (typeof arg === 'object' && arg !== null) ? arg.type : arg;
+        let r = 10;
+        switch (type) {
+            case 0: r = 12; break; // Player
+            case 1: r = 12; break; // NPC
+            case 2: r = 24; break; // Asteroid (avg)
+            case 4: r = 60; break; // Station
+            case 5: r = 45; break; // Jump Gate
+            case 6: r = 8;  break; // Loot Container
+            case 7: r = 18; break; // Combat Marker
+            default: r = 10;
+        }
+        if (type === 2 && typeof arg === 'object' && arg !== null && arg.maxHp > 0) {
+            // Shrink based on resources remaining
+            let ratio = arg.hp / arg.maxHp;
+            r = r * (0.5 + 0.5 * ratio);
+        }
+        return r;
+    }
+
+    // Draw Ship Triangle
+    function drawShipShape(ent, color) {
+        ctx.save();
+        ctx.rotate(ent.currRot);
+
+        // Draw dynamic engine flame first so it's behind the ship body
+        let velocity = Math.sqrt(ent.vx * ent.vx + ent.vy * ent.vy);
+        if (velocity > 5) {
+            ctx.save();
+            ctx.shadowBlur = 12;
+            ctx.shadowColor = '#ff6600';
+            
+            let startX = -6;
+            if (ent.shipType === 'miner' || ent.name.includes('Miner')) {
+                startX = -12;
+            }
+            
+            let flameLength = 12 + Math.random() * 8;
+            let flameWidth = 4 + Math.random() * 2;
+            
+            let grad = ctx.createLinearGradient(startX, 0, startX - flameLength, 0);
+            grad.addColorStop(0, '#ffff00');
+            grad.addColorStop(0.3, '#ffaa00');
+            grad.addColorStop(0.7, '#ff3300');
+            grad.addColorStop(1, 'rgba(255, 0, 0, 0)');
+            
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.moveTo(startX, 0);
+            ctx.lineTo(startX - 2, -flameWidth);
+            ctx.lineTo(startX - flameLength, 0);
+            ctx.lineTo(startX - 2, flameWidth);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        }
+
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 5;
+
+        if (ent.shipType === 'miner' || ent.name.includes('Miner')) {
+            // Draw a bulkier miner shape: central body + two side cargo pods + cockpit
+            ctx.beginPath();
+            ctx.moveTo(16, 0);
+            ctx.lineTo(8, -6);
+            ctx.lineTo(-8, -6);
+            ctx.lineTo(-12, 0);
+            ctx.lineTo(-8, 6);
+            ctx.lineTo(8, 6);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Left Cargo Pod
+            ctx.fillStyle = 'rgba(30, 41, 59, 0.95)';
+            ctx.beginPath();
+            ctx.rect(-6, -12, 12, 5);
+            ctx.fill();
+            ctx.stroke();
+
+            // Right Cargo Pod
+            ctx.beginPath();
+            ctx.rect(-6, 7, 12, 5);
+            ctx.fill();
+            ctx.stroke();
+
+            // Cockpit glass
+            ctx.fillStyle = 'var(--accent-cyan)';
+            ctx.shadowBlur = 0;
+            ctx.beginPath();
+            ctx.moveTo(10, 0);
+            ctx.lineTo(6, -3);
+            ctx.lineTo(2, 0);
+            ctx.lineTo(6, 3);
+            ctx.closePath();
+            ctx.fill();
+        } else {
+            // Sleek fighter triangle shape
+            ctx.beginPath();
+            ctx.moveTo(15, 0);
+            ctx.lineTo(-10, -10);
+            ctx.lineTo(-6, 0);
+            ctx.lineTo(-10, 10);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.beginPath();
+            ctx.moveTo(7, 0);
+            ctx.lineTo(-2, -4);
+            ctx.lineTo(-2, 4);
+            ctx.closePath();
+            ctx.fill();
+        }
+        ctx.restore();
+    }
+
+    // Draw Asteroid rock
+    function drawAsteroidShape(ent) {
+        let r = getEntityRadius(ent);
+
+        let isIron = ent.name.includes('Iron');
+        let isTitanium = ent.name.includes('Titanium');
+        let isCrystal = ent.name.includes('Crystal');
+        let isGas = ent.name.includes('Gas') || ent.name.includes('RareGas');
+
+        // Configure theme based on resource
+        if (isIron) {
+            ctx.shadowColor = '#8a6d3b';
+            ctx.shadowBlur = 6;
+            ctx.fillStyle = 'rgba(65, 50, 45, 0.95)';
+            ctx.strokeStyle = '#a88959';
+            ctx.lineWidth = 2.5;
+        } else if (isTitanium) {
+            ctx.shadowColor = '#007ffd';
+            ctx.shadowBlur = 10;
+            ctx.fillStyle = 'rgba(20, 35, 55, 0.95)';
+            ctx.strokeStyle = '#4a8bd5';
+            ctx.lineWidth = 2.5;
+        } else if (isCrystal) {
+            ctx.shadowColor = '#ff007f';
+            ctx.shadowBlur = 12;
+            ctx.fillStyle = 'rgba(45, 10, 40, 0.9)';
+            ctx.strokeStyle = '#e02080';
+            ctx.lineWidth = 3;
+        } else if (isGas) {
+            ctx.shadowColor = '#39ff14';
+            ctx.shadowBlur = 15;
+            ctx.fillStyle = 'rgba(15, 60, 25, 0.6)';
+            ctx.strokeStyle = '#39ff14';
+            ctx.lineWidth = 1.5;
+        } else {
+            ctx.shadowColor = '#666';
+            ctx.shadowBlur = 4;
+            ctx.fillStyle = 'rgba(30, 27, 27, 0.9)';
+            ctx.strokeStyle = '#554d4d';
+            ctx.lineWidth = 2.5;
+        }
+
+        // Draw the polygon outer shape
+        ctx.beginPath();
+        let pts = 8;
+        if (isCrystal) pts = 5; // Crystalline pentagon
+        if (isTitanium) pts = 6; // Jagged hexagon
+        if (isGas) pts = 10; // Soft round cloud
+
+        for (let i = 0; i < pts; i++) {
+            let angle = (i / pts) * Math.PI * 2;
+            let offset = (Math.sin(ent.id + i) * (r * 0.25)); // offset proportional to radius
+            let pr = r + offset;
+            let px = Math.cos(angle) * pr;
+            let py = Math.sin(angle) * pr;
+            
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Draw resource veins / details on the surface
+        if (isIron) {
+            ctx.fillStyle = 'rgba(210, 140, 80, 0.7)';
+        } else if (isTitanium) {
+            ctx.fillStyle = 'rgba(0, 191, 255, 0.8)';
+        } else if (isCrystal) {
+            ctx.fillStyle = 'rgba(255, 105, 180, 0.9)';
+        } else if (isGas) {
+            ctx.fillStyle = 'rgba(57, 255, 20, 0.8)';
+        } else {
+            ctx.fillStyle = 'rgba(180, 180, 180, 0.4)';
+        }
+
+        if (isCrystal) {
+            // Crystalline facets
+            ctx.strokeStyle = 'rgba(255, 192, 203, 0.6)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(0, 0); ctx.lineTo(-r*0.5, -r*0.3);
+            ctx.moveTo(0, 0); ctx.lineTo(r*0.5, r*0.4);
+            ctx.moveTo(0, 0); ctx.lineTo(-r*0.2, r*0.5);
+            ctx.stroke();
+            
+            // Central core
+            ctx.beginPath();
+            ctx.arc(0, 0, r * 0.3, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            // Craters or bubbles
+            ctx.beginPath();
+            ctx.arc(-r * 0.3, -r * 0.15, r * 0.15, 0, Math.PI * 2);
+            ctx.arc(r * 0.25, r * 0.25, r * 0.2, 0, Math.PI * 2);
+            ctx.arc(-r * 0.1, r * 0.3, r * 0.1, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    // Draw space Station structure
+    function drawStationShape(ent) {
+        let r = getEntityRadius(ent);
+        ctx.shadowColor = 'var(--accent-cyan)';
+        ctx.shadowBlur = 8;
+        
+        ctx.strokeStyle = 'var(--border-color)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.save();
+        ctx.rotate(Date.now() / 1500);
+        ctx.strokeStyle = 'var(--accent-cyan)';
+        ctx.lineWidth = 1.5;
+        
+        ctx.beginPath();
+        ctx.moveTo(-r - 10, 0); ctx.lineTo(r + 10, 0);
+        ctx.moveTo(0, -r - 10); ctx.lineTo(0, r + 10);
+        ctx.stroke();
+        
+        ctx.fillStyle = 'rgba(0, 127, 255, 0.6)';
+        ctx.fillRect(-r - 15, -6, 10, 12);
+        ctx.fillRect(r + 5, -6, 10, 12);
+        ctx.fillRect(-6, -r - 15, 12, 10);
+        ctx.fillRect(-6, r + 5, 12, 10);
+        
+        ctx.restore();
+
+        ctx.fillStyle = 'rgba(15, 15, 27, 0.95)';
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = (Math.floor(Date.now() / 600) % 2 === 0) ? 'var(--accent-green)' : '#113311';
+        ctx.beginPath();
+        ctx.arc(0, 0, 4, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Draw Jump Gate Portal
+    function drawJumpGateShape(ent) {
+        let r = getEntityRadius(ent);
+        ctx.shadowColor = 'var(--accent-orange)';
+        ctx.shadowBlur = 15;
+        
+        ctx.strokeStyle = 'var(--accent-orange)';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Swirling warp energy vortex
+        ctx.save();
+        ctx.rotate(-Date.now() / 400);
+        let grad = ctx.createRadialGradient(0, 0, 5, 0, 0, r);
+        grad.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+        grad.addColorStop(0.3, 'rgba(255, 120, 0, 0.7)');
+        grad.addColorStop(0.7, 'rgba(120, 0, 255, 0.4)');
+        grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(0, 0, r - 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // Outer structural lock pads
+        ctx.fillStyle = '#3f3f3f';
+        ctx.strokeStyle = '#777';
+        ctx.lineWidth = 2;
+        ctx.shadowBlur = 0;
+        
+        for (let i = 0; i < 3; i++) {
+            ctx.save();
+            ctx.rotate((i * 120 * Math.PI) / 180 + Date.now() / 3000);
+            ctx.beginPath();
+            ctx.rect(r - 5, -8, 15, 16);
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+        }
+    }
+
+    // Draw Loot Container Crate
+    function drawLootContainerShape(ent) {
+        let r = getEntityRadius(ent);
+        ctx.strokeStyle = 'var(--accent-orange)';
+        ctx.fillStyle = 'rgba(255, 159, 28, 0.45)';
+        ctx.lineWidth = 2;
+        ctx.shadowColor = 'var(--accent-orange)';
+        ctx.shadowBlur = 8;
+        
+        ctx.beginPath();
+        ctx.rect(-r, -r, r * 2, r * 2);
+        ctx.fill();
+        ctx.stroke();
+        
+        // Draw inner box lines for a crate look
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        ctx.moveTo(-r, -r);
+        ctx.lineTo(r, r);
+        ctx.moveTo(r, -r);
+        ctx.lineTo(-r, r);
+        ctx.stroke();
+    }
+
+    function drawCombatMarkerShape(ent) {
+        let r = getEntityRadius(ent);
+        ctx.save();
+
+        let pulse = 4 + Math.sin(Date.now() / 150) * 4;
+        ctx.shadowColor = 'var(--accent-magenta)';
+        ctx.shadowBlur = 10 + pulse;
+
+        ctx.strokeStyle = 'rgba(255, 0, 127, 0.7)';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, r + pulse * 0.4, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.strokeStyle = 'var(--accent-magenta)';
+        ctx.lineWidth = 3;
+        ctx.shadowBlur = 0;
+
+        // Sword 1
+        ctx.beginPath();
+        ctx.moveTo(-10, 10);
+        ctx.lineTo(10, -10);
+        ctx.stroke();
+
+        // Sword 2
+        ctx.beginPath();
+        ctx.moveTo(10, 10);
+        ctx.lineTo(-10, -10);
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+    // Station interactions
+    window.startRefine = function() {
+        if (!targetID || isSpectator) return;
+        if (!socket || socket.readyState !== WebSocket.OPEN) return;
+        socket.send(JSON.stringify({
+            action: 'refine',
+            target_id: Number(targetID)
+        }));
+        logEvent('Запрос на запуск переработки отправлен', 'system');
+    };
+
+    window.buildShip = function(type) {
+        if (!targetID || isSpectator) return;
+        if (!socket || socket.readyState !== WebSocket.OPEN) return;
+        socket.send(JSON.stringify({
+            action: 'build_ship',
+            target_id: Number(targetID),
+            ship_type: type
+        }));
+        logEvent(`Запрос на постройку корабля [${type}] отправлен`, 'system');
+    };
+
+    // Event delegation for trade buttons (buttons are recreated every frame by updateTargetUI,
+    // so inline onclick never fires — mousedown hits one button, innerHTML replaces it,
+    // mouseup hits a new button, and the browser never generates a click event).
+    // Using mousedown on a stable parent element solves this.
+    document.getElementById('market-table-body').addEventListener('mousedown', function(e) {
+        const btn = e.target.closest('.trade-btn');
+        if (!btn || btn.disabled) return;
+        e.preventDefault();
+        const action = btn.dataset.tradeAction;
+        const resource = btn.dataset.tradeResource;
+        
+        // Read amount from quantity input field
+        const qtyInput = document.getElementById('trade-quantity');
+        const amount = qtyInput ? Math.max(1, parseInt(qtyInput.value) || 1) : 1;
+        
+        if (action && resource && amount) {
+            trade(action, resource, amount);
+        }
+    });
+
+    window.trade = function(action, resource, amount) {
+        if (!targetID || isSpectator) {
+            logEvent('Торговля невозможна: нет цели или режим наблюдателя', 'combat');
+            return;
+        }
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            logEvent('Нет соединения с сервером!', 'combat');
+            return;
+        }
+
+        const player = localPlayerID ? entities.get(localPlayerID) : null;
+        const station = entities.get(targetID);
+        if (!player || !station) {
+            logEvent('Ошибка: данные игрока или станции не найдены', 'combat');
+            return;
+        }
+
+        if (action === 'buy') {
+            const price = station['price' + resource] || 0;
+            const totalCost = price * amount;
+            const stock = station['qty' + resource] || 0;
+
+            if (player.credits < totalCost) {
+                logEvent(`Ошибка покупки: Недостаточно кредитов (${player.credits} / ${totalCost} c)`, 'combat');
+                return;
+            }
+            if (stock < amount) {
+                logEvent(`Ошибка покупки: Недостаточно товара на станции`, 'combat');
+                return;
+            }
+            if ((player.cargoLoad || 0) + amount > (player.cargoCapacity || 100)) {
+                logEvent(`Ошибка покупки: Трюм переполнен`, 'combat');
+                return;
+            }
+        } else if (action === 'sell') {
+            const playerQty = player['qty' + resource] || 0;
+            if (playerQty < amount) {
+                logEvent(`Ошибка продажи: Недостаточно товара в трюме (${playerQty} / ${amount})`, 'combat');
+                return;
+            }
+        }
+
+        socket.send(JSON.stringify({
+            action: action,
+            target_id: Number(targetID),
+            resource: resource,
+            amount: Number(amount)
+        }));
+        logEvent(`Запрос на ${action === 'buy' ? 'покупку' : 'продажу'} ${amount} ${resource} отправлен`, 'trade');
+    };
+
+    window.switchStationTab = function(tabName) {
+        activeStationTab = tabName;
+        
+        // Update tab buttons
+        document.getElementById('tab-btn-market').className = tabName === 'market' ? 'tab-link active' : 'tab-link';
+        document.getElementById('tab-btn-personal').className = tabName === 'personal' ? 'tab-link active' : 'tab-link';
+        document.getElementById('tab-btn-corporate').className = tabName === 'corporate' ? 'tab-link active' : 'tab-link';
+        
+        // Show/hide content panels
+        document.getElementById('tab-content-market').style.display = tabName === 'market' ? 'flex' : 'none';
+        document.getElementById('tab-content-personal').style.display = tabName === 'personal' ? 'flex' : 'none';
+        document.getElementById('tab-content-corporate').style.display = tabName === 'corporate' ? 'flex' : 'none';
+        
+        // Trigger UI update to populate list immediately
+        if (targetID) {
+            const ent = entities.get(targetID);
+            if (ent) updateTargetUI(ent);
+        }
+    };
+
+    // Event delegation for vault buttons
+    document.getElementById('station-panel').addEventListener('mousedown', function(e) {
+        const btn = e.target.closest('.vault-btn');
+        if (!btn || btn.disabled) return;
+        e.preventDefault();
+        const actionType = btn.dataset.vaultAction; // "deposit" or "withdraw"
+        const vaultType = btn.dataset.vaultType;   // "personal" or "corporate"
+        const resource = btn.dataset.vaultResource;
+        
+        let qtyInputId = vaultType === 'personal' ? 'personal-vault-quantity' : 'corporate-vault-quantity';
+        const qtyInput = document.getElementById(qtyInputId);
+        const amount = qtyInput ? Math.max(1, parseInt(qtyInput.value) || 1) : 1;
+        
+        if (actionType && vaultType && resource && amount) {
+            socket.send(JSON.stringify({
+                action: "vault_action",
+                target_id: Number(targetID),
+                resource: resource,
+                amount: Number(amount),
+                vault_type: vaultType,
+                action_type: actionType
+            }));
+            logEvent(`Запрос на ${actionType === 'deposit' ? 'внесение' : 'вывод'} ${amount} ${resource} в ${vaultType === 'personal' ? 'Personal Storage' : 'склад корп.'} отправлен`, 'trade');
+        }
+    });
+
+    // Global layout tracking
+    window.cargoSlots = Array(20).fill(null);
+    window.personalSlots = Array(20).fill(null);
+
+    try {
+        const cStored = localStorage.getItem('cargo_slots');
+        if (cStored) {
+            const parsed = JSON.parse(cStored);
+            if (Array.isArray(parsed)) window.cargoSlots = parsed;
+        }
+    } catch(e) {
+        console.error("Failed to parse cargo_slots:", e);
+    }
+
+    try {
+        const pStored = localStorage.getItem('personal_slots');
+        if (pStored) {
+            const parsed = JSON.parse(pStored);
+            if (Array.isArray(parsed)) window.personalSlots = parsed;
+        }
+    } catch(e) {
+        console.error("Failed to parse personal_slots:", e);
+    }
+
+    window.syncSlotsWithItems = function(slotsArray, serverItems, storageKey) {
+        // Remove items from slots that no longer exist on server
+        for (let i = 0; i < slotsArray.length; i++) {
+            const name = slotsArray[i];
+            if (name && (!serverItems[name] || serverItems[name] <= 0)) {
+                slotsArray[i] = null;
+            }
+        }
+
+        // Handle pending drops
+        if (window.pendingDropTarget && window.pendingDropTarget.source === (storageKey === 'cargo_slots' ? 'cargo' : 'personal')) {
+            const targetIdx = window.pendingDropTarget.index;
+            const resName = window.pendingDropTarget.resource;
+            
+            // Clear any other occurrence of this resource name in slotsArray to prevent duplicates
+            const existingIdx = slotsArray.indexOf(resName);
+            if (existingIdx !== -1) {
+                slotsArray[existingIdx] = null;
+            }
+            
+            if (slotsArray[targetIdx] === null) {
+                slotsArray[targetIdx] = resName;
+            }
+            window.pendingDropTarget = null;
+        }
+
+        if (window.pendingSrcTarget && window.pendingSrcTarget.source === (storageKey === 'cargo_slots' ? 'cargo' : 'personal')) {
+            const srcIdx = window.pendingSrcTarget.index;
+            const resName = window.pendingSrcTarget.resource;
+            
+            // Clear any other occurrence of this resource name in slotsArray to prevent duplicates
+            const existingIdx = slotsArray.indexOf(resName);
+            if (existingIdx !== -1) {
+                slotsArray[existingIdx] = null;
+            }
+            
+            if (slotsArray[srcIdx] === null) {
+                slotsArray[srcIdx] = resName;
+            }
+            window.pendingSrcTarget = null;
+        }
+
+        // Add new items from server that are not yet in slots
+        for (let name in serverItems) {
+            const qty = serverItems[name];
+            if (qty > 0) {
+                // Skip if this item is currently in transit to prevent flicker
+                if (window.pendingDropTarget && window.pendingDropTarget.resource === name) {
+                    continue;
+                }
+                if (window.pendingSrcTarget && window.pendingSrcTarget.resource === name) {
+                    continue;
+                }
+
+                // Clean up duplicate entries to guarantee only 1 slot has this item name
+                let occurrences = [];
+                for (let i = 0; i < slotsArray.length; i++) {
+                    if (slotsArray[i] === name) {
+                        occurrences.push(i);
+                    }
+                }
+                
+                if (occurrences.length > 1) {
+                    // Keep first one, clear others
+                    for (let k = 1; k < occurrences.length; k++) {
+                        slotsArray[occurrences[k]] = null;
+                    }
+                } else if (occurrences.length === 0) {
+                    const idx = slotsArray.indexOf(null);
+                    if (idx !== -1) {
+                        slotsArray[idx] = name;
+                    } else {
+                        slotsArray.push(name);
+                    }
+                }
+            }
+        }
+
+        // Save
+        localStorage.setItem(storageKey, JSON.stringify(slotsArray));
+    };
+
+    window.renderFleetCargo = function() {
+        const fleetCargoGrid = document.getElementById('fleet-cargo-grid');
+        if (!fleetCargoGrid) return;
+
+        window.syncSlotsWithItems(window.cargoSlots, playerInventoryCargo, 'cargo_slots');
+
+        let html = '';
+        for (let i = 0; i < Math.max(20, window.cargoSlots.length); i++) {
+            const name = window.cargoSlots[i];
+            const qty = name ? (playerInventoryCargo[name] || 0) : 0;
+            if (name && qty > 0) {
+                html += `
+                    <div class="inventory-slot" 
+                         draggable="true" 
+                         ondragstart="handleDragStart(event, '${name}', 'cargo', ${i})" 
+                         ondragend="handleDragEnd(event)"
+                         ondragover="event.preventDefault()"
+                         ondrop="handleSlotDrop(event, 'cargo', ${i})"
+                         data-resource="${name}"
+                         data-qty="${qty}"
+                         data-source="cargo"
+                         data-index="${i}">
+                        <span class="item-name">${name}</span>
+                        <span class="item-qty">${qty}</span>
+                    </div>
+                `;
+            } else {
+                html += `
+                    <div class="inventory-slot empty"
+                         ondragover="event.preventDefault()"
+                         ondrop="handleSlotDrop(event, 'cargo', ${i})"
+                         data-index="${i}">
+                    </div>
+                `;
+            }
+        }
+        fleetCargoGrid.innerHTML = html;
+    };
+
+    window.renderPersonalStorage = function() {
+        const psGrid = document.getElementById('personal-storage-grid');
+        if (!psGrid) return;
+
+        window.syncSlotsWithItems(window.personalSlots, personalVaultCargo, 'personal_slots');
+
+        let html = '';
+        for (let i = 0; i < Math.max(20, window.personalSlots.length); i++) {
+            const name = window.personalSlots[i];
+            const qty = name ? (personalVaultCargo[name] || 0) : 0;
+            if (name && qty > 0) {
+                html += `
+                    <div class="inventory-slot" 
+                         draggable="true" 
+                         ondragstart="handleDragStart(event, '${name}', 'personal', ${i})" 
+                         ondragend="handleDragEnd(event)"
+                         ondragover="event.preventDefault()"
+                         ondrop="handleSlotDrop(event, 'personal', ${i})"
+                         data-resource="${name}"
+                         data-qty="${qty}"
+                         data-source="personal"
+                         data-index="${i}">
+                        <span class="item-name">${name}</span>
+                        <span class="item-qty">${qty}</span>
+                    </div>
+                `;
+            } else {
+                html += `
+                    <div class="inventory-slot empty"
+                         ondragover="event.preventDefault()"
+                         ondrop="handleSlotDrop(event, 'personal', ${i})"
+                         data-index="${i}">
+                    </div>
+                `;
+            }
+        }
+        psGrid.innerHTML = html;
+    };
+
+    // Global drag state
+    window.draggedItem = null;
+
+    window.handleDragStart = function(ev, resource, source, index) {
+        const qty = parseInt(ev.currentTarget.dataset.qty) || 1;
+        window.draggedItem = {
+            resource: resource,
+            source: source,
+            qty: qty,
+            index: index
+        };
+
+        const qtyInput = document.getElementById('personal-vault-quantity');
+        if (qtyInput) {
+            qtyInput.value = qty;
+        }
+
+        ev.currentTarget.classList.add('dragging');
+        if (ev.dataTransfer) {
+            ev.dataTransfer.setData('text/plain', resource);
+            ev.dataTransfer.effectAllowed = 'move';
+        }
+    };
+
+    window.handleDragEnd = function(ev) {
+        ev.currentTarget.classList.remove('dragging');
+        window.draggedItem = null;
+        const cargoGrid = document.getElementById('fleet-cargo-grid');
+        if (cargoGrid) cargoGrid.classList.remove('drag-over');
+        const storageGrid = document.getElementById('personal-storage-grid');
+        if (storageGrid) storageGrid.classList.remove('drag-over');
+    };
+
+    window.handleCargoDrop = function(ev) {
+        ev.preventDefault();
+        ev.currentTarget.classList.remove('drag-over');
+        if (window.draggedItem) {
+            const firstEmpty = window.cargoSlots.indexOf(null);
+            const targetIdx = firstEmpty !== -1 ? firstEmpty : window.cargoSlots.length;
+            window.handleSlotDrop(ev, 'cargo', targetIdx);
+        }
+    };
+
+    window.handleStorageDrop = function(ev) {
+        ev.preventDefault();
+        ev.currentTarget.classList.remove('drag-over');
+        if (window.draggedItem) {
+            const firstEmpty = window.personalSlots.indexOf(null);
+            const targetIdx = firstEmpty !== -1 ? firstEmpty : window.personalSlots.length;
+            window.handleSlotDrop(ev, 'personal', targetIdx);
+        }
+    };
+
+    window.handleSlotDrop = function(ev, targetSource, targetIndex) {
+        ev.preventDefault();
+        ev.stopPropagation();
+
+        const cargoGrid = document.getElementById('fleet-cargo-grid');
+        if (cargoGrid) cargoGrid.classList.remove('drag-over');
+        const storageGrid = document.getElementById('personal-storage-grid');
+        if (storageGrid) storageGrid.classList.remove('drag-over');
+
+        if (!window.draggedItem) return;
+
+        const srcSource = window.draggedItem.source;
+        const srcIndex = window.draggedItem.index;
+        const res = window.draggedItem.resource;
+
+        const slotsArraySource = srcSource === 'cargo' ? window.cargoSlots : window.personalSlots;
+        const slotsArrayTarget = targetSource === 'cargo' ? window.cargoSlots : window.personalSlots;
+
+        const targetItemName = slotsArrayTarget[targetIndex];
+
+        if (srcSource === targetSource) {
+            // Swap internally
+            const temp = slotsArraySource[srcIndex];
+            slotsArraySource[srcIndex] = slotsArraySource[targetIndex];
+            slotsArraySource[targetIndex] = temp;
+
+            localStorage.setItem(srcSource === 'cargo' ? 'cargo_slots' : 'personal_slots', JSON.stringify(slotsArraySource));
+
+            if (srcSource === 'cargo') {
+                window.renderFleetCargo();
+            } else {
+                window.renderPersonalStorage();
+            }
+        } else {
+            // Swap between cargo & storage grids
+            const qtyInput = document.getElementById('personal-vault-quantity');
+            const amount = qtyInput ? Math.max(1, parseInt(qtyInput.value) || 1) : 1;
+
+            // Clear any old recovery timeout
+            if (window.pendingTimeout) {
+                clearTimeout(window.pendingTimeout);
+            }
+            // Setup a fallback timeout to clean up pending state if server fails or delays
+            window.pendingTimeout = setTimeout(() => {
+                window.pendingDropTarget = null;
+                window.pendingSrcTarget = null;
+                if (srcSource === 'cargo') {
+                    window.renderFleetCargo();
+                    window.renderPersonalStorage();
+                } else {
+                    window.renderPersonalStorage();
+                    window.renderFleetCargo();
+                }
+            }, 1000);
+
+            if (targetItemName) {
+                // Dragged item swaps with targetItem
+                window.pendingDropTarget = {
+                    source: targetSource,
+                    index: targetIndex,
+                    resource: res
+                };
+                window.pendingSrcTarget = {
+                    source: srcSource,
+                    index: srcIndex,
+                    resource: targetItemName
+                };
+
+                // Clear slots locally so they redraw empty while waiting for server update
+                slotsArraySource[srcIndex] = null;
+                slotsArrayTarget[targetIndex] = null;
+
+                localStorage.setItem(srcSource === 'cargo' ? 'cargo_slots' : 'personal_slots', JSON.stringify(slotsArraySource));
+                localStorage.setItem(targetSource === 'cargo' ? 'cargo_slots' : 'personal_slots', JSON.stringify(slotsArrayTarget));
+
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    const action1 = srcSource === 'personal' ? 'withdraw' : 'deposit';
+                    socket.send(JSON.stringify({
+                        action: "vault_action",
+                        target_id: Number(targetID),
+                        resource: res,
+                        amount: Number(amount),
+                        vault_type: "personal",
+                        action_type: action1
+                    }));
+
+                    const targetQty = (srcSource === 'personal' ? playerInventoryCargo : personalVaultCargo)[targetItemName] || 0;
+                    const action2 = targetSource === 'personal' ? 'withdraw' : 'deposit';
+                    socket.send(JSON.stringify({
+                        action: "vault_action",
+                        target_id: Number(targetID),
+                        resource: targetItemName,
+                        amount: Number(targetQty),
+                        vault_type: "personal",
+                        action_type: action2
+                    }));
+
+                    logEvent(`Своп: запрос на перенос ${amount} ${res} в ${targetSource} и ${targetQty} ${targetItemName} в ${srcSource} отправлен`, 'trade');
+                }
+            } else {
+                // Drop to empty slot in other grid
+                window.pendingDropTarget = {
+                    source: targetSource,
+                    index: targetIndex,
+                    resource: res
+                };
+                window.pendingSrcTarget = null;
+
+                slotsArraySource[srcIndex] = null;
+                localStorage.setItem(srcSource === 'cargo' ? 'cargo_slots' : 'personal_slots', JSON.stringify(slotsArraySource));
+
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    const action = srcSource === 'personal' ? 'withdraw' : 'deposit';
+                    socket.send(JSON.stringify({
+                        action: "vault_action",
+                        target_id: Number(targetID),
+                        resource: res,
+                        amount: Number(amount),
+                        vault_type: "personal",
+                        action_type: action
+                    }));
+                    logEvent(`Запрос на ${action === 'deposit' ? 'внесение' : 'вывод'} ${amount} ${res} в Personal Storage отправлен`, 'trade');
+                }
+            }
+        }
+        window.draggedItem = null;
+    };
+
+    // Connect to WebSocket gateway on page load
+    connectWS();
+    logEvent("Слот-система Drag & Drop инициализирована (v2)", "system");
+
+    // Start drawing rendering loop
+    requestAnimationFrame(draw);
+</script>
+</body>
+</html>
