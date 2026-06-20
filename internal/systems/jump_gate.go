@@ -283,6 +283,36 @@ func DeserializePlayer(world *ecs.World, payload *protocol.PlayerMigrationPayloa
 		FactionID: payload.FactionId,
 	})
 
+	// Reconstruct fleet component
+	shipType := payload.ShipType
+	if shipType == "" {
+		shipType = "fighter"
+	}
+	ships := []domain.FleetShip{
+		{
+			ShipID:        1,
+			ShipType:      shipType,
+			Health:        payload.Hp,
+			MaxHealth:     payload.MaxHp,
+			Shield:        payload.Shield,
+			MaxShield:     payload.MaxShield,
+			CargoCapacity: payload.CargoCapacity,
+		},
+	}
+	// For players, also recreate the default secondary escort miner ship
+	if !payload.IsNpc {
+		ships = append(ships, domain.FleetShip{
+			ShipID:        2,
+			ShipType:      "miner",
+			Health:        80,
+			MaxHealth:     80,
+			Shield:        30,
+			MaxShield:     30,
+			CargoCapacity: 150,
+		})
+	}
+	world.AddComponent(playerID, &domain.Fleet{Ships: ships})
+
 	var cargoItems []domain.ItemInstance
 	for _, item := range payload.CargoItems {
 		cargoItems = append(cargoItems, domain.ItemInstance{

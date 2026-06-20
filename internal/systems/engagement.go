@@ -29,6 +29,9 @@ func (s *FleetEngagementSystem) Priority() int {
 }
 
 func (s *FleetEngagementSystem) Update(world *ecs.World, dt float64) {
+	// Радиус сближения для присоединения к бою (30 единиц)
+	engageDistSq := float32(30.0 * 30.0)
+
 	// 1. Ищем все флоты на карте, которые еще не в бою
 	mask := ecs.BuildMask(domain.Transform{}, domain.Fleet{})
 	entities := world.Query(mask)
@@ -39,10 +42,6 @@ func (s *FleetEngagementSystem) Update(world *ecs.World, dt float64) {
 			freeFleets = append(freeFleets, id)
 		}
 	}
-
-	// Расстояние сближения для авто-начала боя (30 единиц)
-	engageRadius := float32(30.0)
-	engageDistSq := engageRadius * engageRadius
 
 	// 2. Детектируем новые столкновения свободных флотов
 	if len(freeFleets) >= 2 {
@@ -60,9 +59,30 @@ func (s *FleetEngagementSystem) Update(world *ecs.World, dt float64) {
 				dy := t1.Y - t2.Y
 				distSq := dx*dx + dy*dy
 
-				if distSq < engageDistSq {
-					// Проверка враждебности
-					if AreHostile(world, id1, id2) {
+				// Вычисляем радиус авто-боя по дальности оружия флотов (по умолчанию 30)
+				var range1 float32 = 30.0
+				if wVal1, ok := world.GetComponent(id1, domain.Weapon{}); ok {
+					range1 = wVal1.(*domain.Weapon).Range
+				}
+				var range2 float32 = 30.0
+				if wVal2, ok := world.GetComponent(id2, domain.Weapon{}); ok {
+					range2 = wVal2.(*domain.Weapon).Range
+				}
+
+				if AreHostile(world, id1, id2) {
+					// Бой начинается только если агрессор находится в зоне атаки от цели
+					agg1 := isAggressor(world, id1, id2)
+					agg2 := isAggressor(world, id2, id1)
+
+					shouldEngage := false
+					if agg1 && distSq < range1*range1 {
+						shouldEngage = true
+					}
+					if agg2 && distSq < range2*range2 {
+						shouldEngage = true
+					}
+
+					if shouldEngage {
 						// Если один из них майнер, помечаем второго как MinerAttacker
 						if IsMiner(world, id2) {
 							world.AddComponent(id1, &domain.MinerAttacker{IsCriminal: true})
@@ -251,5 +271,39 @@ func AreHostile(world *ecs.World, id1, id2 domain.EntityID) bool {
 		return isP1 || isCrim1
 	}
 
+	return false
+}
+
+// isAggressor проверяет, проявляет ли сущность id агрессию по отношению к target
+func isAggressor(world *ecs.World, id, target domain.EntityID) bool {
+	eType, exists := world.GetEntityType(id)
+	if !exists {
+		return false
+	}
+
+	// 1. Игрок является агрессором, если он явно атакует цель (у него активно оружие против нее)
+	if eType == domain.EntityPlayer {
+		if wVal, ok := world.GetComponent(id, domain.Weapon{}); ok {
+			w := wVal.(*domain.Weapon)
+			if w.Active && w.TargetID == target {
+				return true
+			}
+		}
+		return false
+	}
+
+	// 2. NPC пират агрессивен ко всем не-пиратам
+	if IsPirate(world, id) {
+		return !IsPirate(world, target)
+	}
+
+	// 3. NPC патруль агрессивен к пиратам и преступникам (MinerAttacker)
+	if IsPatrol(world, id) {
+		isPirateTarget := IsPirate(world, target)
+		_, isCrimTarget := world.GetComponent(target, domain.MinerAttacker{})
+		return isPirateTarget || isCrimTarget
+	}
+
+	// Шахтеры по умолчанию мирные и первыми в бой не лезут
 	return false
 }

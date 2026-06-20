@@ -69,9 +69,6 @@ func (s *CleanupSystem) Update(world *ecs.World, dt float64) {
 
 			if pVal, ok := world.GetComponent(id, domain.PlayerData{}); ok {
 				credits = pVal.(*domain.PlayerData).Credits
-				if credits > 0 {
-					hasLoot = true
-				}
 			}
 
 			if cargoVal, ok := world.GetComponent(id, domain.Cargo{}); ok {
@@ -79,10 +76,11 @@ func (s *CleanupSystem) Update(world *ecs.World, dt float64) {
 				for _, item := range cargo.Items {
 					if item.Quantity > 0 {
 						items = append(items, item)
-						hasLoot = true
 					}
 				}
 			}
+
+			hasLoot = len(items) > 0
 
 			// Проверяем, находится ли сущность в боевом инстансе (имеет компонент CombatTeam).
 			// Если да, то лут в комнате боя НЕ выпадает.

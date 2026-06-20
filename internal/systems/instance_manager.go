@@ -449,7 +449,7 @@ func (m *InstanceManager) resolveCombat(mainWorld *ecs.World, inst *CombatInstan
 				items = append([]domain.ItemInstance{}, cargoVal.(*domain.Cargo).Items...)
 			}
 
-			if credits > 0 || len(items) > 0 {
+			if len(items) > 0 {
 				lootEntity := mainWorld.CreateEntity(domain.EntityLootContainer)
 				mainWorld.AddComponent(lootEntity, &domain.Transform{X: posX, Y: posY})
 				mainWorld.AddComponent(lootEntity, &domain.Loot{Credits: credits})

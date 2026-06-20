@@ -548,6 +548,31 @@
     <div id="right-panel" class="panel">
         <h1>Navigation & Target</h1>
 
+        <!-- Player HUD Panel -->
+        <div id="player-hud-panel" style="display: none; flex-direction: column; gap: 4px; background: rgba(15, 15, 27, 0.85); border: 1.5px solid var(--accent-cyan); box-shadow: 0 0 12px rgba(0, 242, 254, 0.3); border-radius: 8px; padding: 10px; font-size: 0.8rem; margin-bottom: 12px;">
+            <div style="font-weight: 700; color: var(--accent-cyan); font-family: 'Orbitron', sans-serif;">Ваш корабль</div>
+            
+            <div style="margin-top: 4px;" id="player-hp-sec">
+                <div style="display: flex; justify-content: space-between; font-size: 0.7rem;">
+                    <span>HP</span>
+                    <span id="player-hp-label">0/0</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar-fill" id="player-hp-bar" style="background: var(--accent-green); width: 0%;"></div>
+                </div>
+            </div>
+
+            <div style="margin-top: 4px;" id="player-sh-sec">
+                <div style="display: flex; justify-content: space-between; font-size: 0.7rem;">
+                    <span>SH</span>
+                    <span id="player-sh-label">0/0</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar-fill shield" id="player-sh-bar" style="width: 0%;"></div>
+                </div>
+            </div>
+        </div>
+
         <div id="target-panel">
             <div class="target-name" id="target-name">No Target</div>
             <div style="font-size: 0.7rem; color: var(--text-muted)" id="target-id-label">ID: -</div>
@@ -706,7 +731,7 @@
     </div>
 
     <!-- Build Version Label -->
-    <div id="build-version" style="position: absolute; bottom: 10px; left: 10px; z-index: 1000; font-family: monospace; font-size: 10px; color: var(--text-muted); pointer-events: none;">ver. 0.008</div>
+    <div id="build-version" style="position: absolute; bottom: 10px; left: 10px; z-index: 1000; font-family: monospace; font-size: 10px; color: var(--text-muted); pointer-events: none;">ver. 0.012</div>
 </div>
 
 <script>
@@ -1150,6 +1175,37 @@
             // Update Fleet Cargo Panel (grid layout) on the right sidebar
             if (typeof window.renderFleetCargo === 'function') {
                 window.renderFleetCargo();
+            }
+
+            // Update Player HP & SH bars
+            const playerHudPanel = document.getElementById('player-hud-panel');
+            if (playerHudPanel) {
+                playerHudPanel.style.display = 'flex';
+                
+                // HP
+                const maxHp = p.maxHp || 100;
+                const hp = p.hp !== undefined ? p.hp : maxHp;
+                document.getElementById('player-hp-label').textContent = `${hp}/${maxHp}`;
+                let hpPct = (hp / maxHp) * 100;
+                document.getElementById('player-hp-bar').style.width = Math.max(0, Math.min(100, hpPct)) + '%';
+                
+                // SH (shield)
+                const maxShield = p.maxShield || 0;
+                const shield = p.shield !== undefined ? p.shield : maxShield;
+                const shSec = document.getElementById('player-sh-sec');
+                if (maxShield > 0) {
+                    shSec.style.display = 'block';
+                    document.getElementById('player-sh-label').textContent = `${shield}/${maxShield}`;
+                    let shieldPct = (shield / maxShield) * 100;
+                    document.getElementById('player-sh-bar').style.width = Math.max(0, Math.min(100, shieldPct)) + '%';
+                } else {
+                    shSec.style.display = 'none';
+                }
+            }
+        } else {
+            const playerHudPanel = document.getElementById('player-hud-panel');
+            if (playerHudPanel) {
+                playerHudPanel.style.display = 'none';
             }
         }
 
@@ -2195,10 +2251,67 @@
         ctx.restore();
     }
 
+    function getNPCRanges(ent) {
+        let attackRange = 150;
+        let pursuitRange = 500;
+
+        if (currentSystemID >= 10000) {
+            // В комнате боя (Battle Room)
+            pursuitRange = 3000;
+            switch (ent.shipType) {
+                case "fighter": attackRange = 500; break;
+                case "patrol":  attackRange = 400; break;
+                case "pirate":  attackRange = 350; break;
+                case "miner":   attackRange = 300; break;
+                case "cargo":
+                case "cargo_helper": attackRange = 250; break;
+                default: attackRange = 300; break;
+            }
+        } else {
+            // В обычном секторе (Main world)
+            pursuitRange = 500;
+            if (ent.name.includes("Pirate") || ent.name.includes("Outlaw")) {
+                attackRange = 50;
+            } else if (ent.name.includes("Patrol") || ent.name.includes("Enforcer")) {
+                attackRange = 60;
+            } else if (ent.name.includes("Miner")) {
+                attackRange = 80;
+            } else {
+                attackRange = 50;
+            }
+        }
+        return { attackRange, pursuitRange };
+    }
+
     // Draw single entity
     function drawEntity(ent) {
         ctx.save();
         ctx.translate(ent.currX, ent.currY);
+
+        // Отображение зон атаки и преследования для живых NPC
+        if (ent.type === 1 && ent.hp > 0) {
+            let ranges = getNPCRanges(ent);
+            
+            // Зона преследования (бирюзовый пунктир)
+            ctx.save();
+            ctx.strokeStyle = 'rgba(0, 242, 254, 0.15)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 6]);
+            ctx.beginPath();
+            ctx.arc(0, 0, ranges.pursuitRange, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+
+            // Зона атаки (красный пунктир)
+            ctx.save();
+            ctx.strokeStyle = ent.name.includes("Miner") ? 'rgba(255, 170, 0, 0.25)' : 'rgba(255, 0, 127, 0.25)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([2, 4]);
+            ctx.beginPath();
+            ctx.arc(0, 0, ranges.attackRange, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
 
         // Draw selection ring if targeted
         if (ent.id === targetID) {

@@ -246,31 +246,109 @@ func (s *AISystem) updatePirate(world *ecs.World, id domain.EntityID, myPos math
 }
 
 func (s *AISystem) updatePatrol(world *ecs.World, id domain.EntityID, myPos mathutil.Vec2, trans *domain.Transform, vel *domain.Velocity, ai *domain.AIState, shipCfg *domain.ShipConfig) {
-	// Сначала ищем ближайшего преступника (напавшего на майнеров), который не в бою, в радиусе 500
-	maskCrim := ecs.BuildMask(domain.Transform{}, domain.MinerAttacker{})
-	crimEntities := world.Query(maskCrim)
-	
-	var nearestCrimPos mathutil.Vec2
-	minCrimDist := float32(500.0)
-	foundCrim := false
-	
-	for _, crimID := range crimEntities {
-		if _, inCombat := world.GetComponent(crimID, domain.CombatState{}); inCombat {
-			continue
+	var factionID uint32 = 0
+	if fVal, ok := world.GetComponent(id, domain.FactionMember{}); ok {
+		factionID = fVal.(*domain.FactionMember).FactionID
+	}
+
+	// 1. Проверяем текущую цель преследования, если она есть
+	hasTarget := false
+	if ai.TargetID != 0 {
+		// Проверим, существует ли цель, не в бою ли она, и находится ли она на расстоянии <= 500
+		targetTVal, targetExists := world.GetComponent(ai.TargetID, domain.Transform{})
+		_, targetInCombat := world.GetComponent(ai.TargetID, domain.CombatState{})
+		
+		if targetExists && !targetInCombat {
+			t := targetTVal.(*domain.Transform)
+			targetPos := mathutil.NewVec2(t.X, t.Y)
+			dist := myPos.Distance(targetPos)
+			if dist <= 500.0 {
+				hasTarget = true
+			}
 		}
-		tVal, _ := world.GetComponent(crimID, domain.Transform{})
-		t := tVal.(*domain.Transform)
-		pos := mathutil.NewVec2(t.X, t.Y)
-		dist := myPos.Distance(pos)
-		if dist < minCrimDist {
-			minCrimDist = dist
-			nearestCrimPos = pos
-			foundCrim = true
+		
+		if !hasTarget {
+			// Цель утеряна или вышла из зоны преследования
+			ai.TargetID = 0
 		}
 	}
-	
-	if foundCrim {
-		dir := nearestCrimPos.Sub(myPos).Normalize()
+
+	// Если у нас нет текущей цели (или она только что была сброшена), ищем новую ближайшую
+	if ai.TargetID == 0 {
+		var nearestEnemyID domain.EntityID
+		minEnemyDist := float32(500.0)
+		foundEnemy := false
+
+		allEntities := world.Query(ecs.BuildMask(domain.Transform{}))
+
+		for _, entID := range allEntities {
+			if entID == id {
+				continue
+			}
+
+			// Пропускаем тех, кто уже в бою
+			if _, inCombat := world.GetComponent(entID, domain.CombatState{}); inCombat {
+				continue
+			}
+
+			eType, exists := world.GetEntityType(entID)
+			if !exists {
+				continue
+			}
+
+			isEnemy := false
+
+			if factionID == 1 {
+				// Пираты враждебны ко всем, кроме других пиратов NPC
+				var targetFaction uint32 = 0
+				if fVal, ok := world.GetComponent(entID, domain.FactionMember{}); ok {
+					targetFaction = fVal.(*domain.FactionMember).FactionID
+				}
+
+				// Враждебны: игроки и любые NPC, кроме пиратов
+				if eType == domain.EntityPlayer {
+					isEnemy = true
+				} else if eType == domain.EntityNPC && targetFaction != 1 {
+					isEnemy = true
+				}
+			} else if factionID == 2 {
+				// Патрули враждебны только к пиратам (FactionID == 1) и преступникам (MinerAttacker)
+				var targetFaction uint32 = 0
+				if fVal, ok := world.GetComponent(entID, domain.FactionMember{}); ok {
+					targetFaction = fVal.(*domain.FactionMember).FactionID
+				}
+				_, isCrim := world.GetComponent(entID, domain.MinerAttacker{})
+
+				if targetFaction == 1 || isCrim {
+					isEnemy = true
+				}
+			}
+
+			if isEnemy {
+				tVal, _ := world.GetComponent(entID, domain.Transform{})
+				t := tVal.(*domain.Transform)
+				pos := mathutil.NewVec2(t.X, t.Y)
+				dist := myPos.Distance(pos)
+				if dist < minEnemyDist {
+					minEnemyDist = dist
+					nearestEnemyID = entID
+					foundEnemy = true
+				}
+			}
+		}
+
+		if foundEnemy {
+			ai.TargetID = nearestEnemyID
+			hasTarget = true
+		}
+	}
+
+	// Если цель валидна — летим к ней
+	if hasTarget && ai.TargetID != 0 {
+		targetTVal, _ := world.GetComponent(ai.TargetID, domain.Transform{})
+		t := targetTVal.(*domain.Transform)
+		targetPos := mathutil.NewVec2(t.X, t.Y)
+		dir := targetPos.Sub(myPos).Normalize()
 		vel.X = dir.X * shipCfg.MaxSpeed
 		vel.Y = dir.Y * shipCfg.MaxSpeed
 		if vel.X != 0 || vel.Y != 0 {
@@ -279,37 +357,39 @@ func (s *AISystem) updatePatrol(world *ecs.World, id domain.EntityID, myPos math
 		return
 	}
 
-	// Если рядом есть активный бой (CombatMarker), летим в его сторону, чтобы вмешаться!
-	mask := ecs.BuildMask(domain.Transform{}, domain.CombatMarker{})
-	markers := world.Query(mask)
-	
-	var nearestMarkerPos mathutil.Vec2
-	minDist := float32(500.0) // Ищем в радиусе 500
-	foundMarker := false
-	
-	for _, markerID := range markers {
-		tVal, _ := world.GetComponent(markerID, domain.Transform{})
-		t := tVal.(*domain.Transform)
-		pos := mathutil.NewVec2(t.X, t.Y)
-		dist := myPos.Distance(pos)
-		if dist < minDist {
-			minDist = dist
-			nearestMarkerPos = pos
-			foundMarker = true
+	// 2. Если рядом есть активный бой (CombatMarker), летим в его сторону (только для патрулей)
+	if factionID == 2 {
+		mask := ecs.BuildMask(domain.Transform{}, domain.CombatMarker{})
+		markers := world.Query(mask)
+		
+		var nearestMarkerPos mathutil.Vec2
+		minDist := float32(500.0) // Ищем в радиусе 500
+		foundMarker := false
+		
+		for _, markerID := range markers {
+			tVal, _ := world.GetComponent(markerID, domain.Transform{})
+			t := tVal.(*domain.Transform)
+			pos := mathutil.NewVec2(t.X, t.Y)
+			dist := myPos.Distance(pos)
+			if dist < minDist {
+				minDist = dist
+				nearestMarkerPos = pos
+				foundMarker = true
+			}
 		}
-	}
-	
-	if foundMarker {
-		dir := nearestMarkerPos.Sub(myPos).Normalize()
-		vel.X = dir.X * shipCfg.MaxSpeed
-		vel.Y = dir.Y * shipCfg.MaxSpeed
-		if vel.X != 0 || vel.Y != 0 {
-			trans.Rotation = float32(math.Atan2(float64(vel.Y), float64(vel.X)))
+		
+		if foundMarker {
+			dir := nearestMarkerPos.Sub(myPos).Normalize()
+			vel.X = dir.X * shipCfg.MaxSpeed
+			vel.Y = dir.Y * shipCfg.MaxSpeed
+			if vel.X != 0 || vel.Y != 0 {
+				trans.Rotation = float32(math.Atan2(float64(vel.Y), float64(vel.X)))
+			}
+			return
 		}
-		return
 	}
 
-	// Иначе просто патрулируем вокруг home position
+	// 3. Иначе просто патрулируем вокруг home position
 	homeDist := myPos.Distance(mathutil.NewVec2(ai.HomePos.X, ai.HomePos.Y))
 	if homeDist > 2000 {
 		homePos := mathutil.NewVec2(ai.HomePos.X, ai.HomePos.Y)
@@ -470,10 +550,16 @@ func (s *AISystem) spawnNPCsIfNeeded(world *ecs.World) {
 					world.AddComponent(t.EntityID, &domain.PlayerData{Name: t.Name, Credits: 0})
 				} else {
 					// Add dummy weapon so weapon component checks pass, but combat is disabled anyway
+					var weaponRange float32 = 150.0
+					if shipType == "patrol" {
+						weaponRange = 180.0
+					}
+					weaponRange = weaponRange / 3.0
+
 					world.AddComponent(t.EntityID, &domain.Weapon{
 						Type:     domain.WeaponLaser,
 						Damage:   6,
-						Range:    150,
+						Range:    weaponRange,
 						Cooldown: 1.2,
 					})
 				}
@@ -580,7 +666,7 @@ func (s *AISystem) spawnNPCsIfNeeded(world *ecs.World) {
 				world.AddComponent(npc, &domain.Health{Current: 60, Max: 60})
 				world.AddComponent(npc, &domain.Shield{Current: 20, Max: 20, RegenRate: 1.0})
 				world.AddComponent(npc, &domain.Cargo{Items: []domain.ItemInstance{}, Capacity: 50})
-				world.AddComponent(npc, &domain.Weapon{Type: domain.WeaponLaser, Damage: 6, Range: 150, Cooldown: 1.2})
+				world.AddComponent(npc, &domain.Weapon{Type: domain.WeaponLaser, Damage: 6, Range: 50, Cooldown: 1.2})
 				world.AddComponent(npc, &domain.FactionMember{FactionID: 1})
 			} else {
 				// Pirate Escort
@@ -593,7 +679,7 @@ func (s *AISystem) spawnNPCsIfNeeded(world *ecs.World) {
 				world.AddComponent(npc, &domain.Health{Current: 60, Max: 60})
 				world.AddComponent(npc, &domain.Shield{Current: 20, Max: 20, RegenRate: 1.0})
 				world.AddComponent(npc, &domain.Cargo{Items: []domain.ItemInstance{}, Capacity: 50})
-				world.AddComponent(npc, &domain.Weapon{Type: domain.WeaponLaser, Damage: 6, Range: 150, Cooldown: 1.2})
+				world.AddComponent(npc, &domain.Weapon{Type: domain.WeaponLaser, Damage: 6, Range: 50, Cooldown: 1.2})
 				world.AddComponent(npc, &domain.FactionMember{FactionID: 1})
 			}
 		} else {
@@ -612,7 +698,7 @@ func (s *AISystem) spawnNPCsIfNeeded(world *ecs.World) {
 			world.AddComponent(npc, &domain.Health{Current: 100, Max: 100})
 			world.AddComponent(npc, &domain.Shield{Current: 50, Max: 50, RegenRate: 1.0})
 			world.AddComponent(npc, &domain.Cargo{Items: []domain.ItemInstance{}, Capacity: 100})
-			world.AddComponent(npc, &domain.Weapon{Type: domain.WeaponPlasma, Damage: 8, Range: 180, Cooldown: 1.5})
+			world.AddComponent(npc, &domain.Weapon{Type: domain.WeaponPlasma, Damage: 8, Range: 60, Cooldown: 1.5})
 			world.AddComponent(npc, &domain.FactionMember{FactionID: 2})
 		}
 	}
@@ -689,17 +775,23 @@ func (s *AISystem) updateAttack(world *ecs.World, id domain.EntityID, myPos math
 			weapon.Active = true
 
 			dir := nearestEnemyPos.Sub(myPos).Normalize()
-			// Если мы вне зоны поражения оружия, летим к цели
-			if minDist > weapon.Range {
+			minRange := weapon.Range * 0.7
+			maxRange := weapon.Range * 0.9
+
+			if minDist > maxRange {
+				// Вне зоны подлета: летим к цели
 				vel.X = dir.X * shipCfg.MaxSpeed
 				vel.Y = dir.Y * shipCfg.MaxSpeed
-				trans.Rotation = float32(math.Atan2(float64(dir.Y), float64(dir.X)))
+			} else if minDist < minRange {
+				// Слишком близко: отлетаем назад
+				vel.X = -dir.X * shipCfg.MaxSpeed * 0.4
+				vel.Y = -dir.Y * shipCfg.MaxSpeed * 0.4
 			} else {
-				// В зоне поражения оружия: останавливаемся/медленно движемся и стреляем
-				vel.X = dir.X * shipCfg.MaxSpeed * 0.1
-				vel.Y = dir.Y * shipCfg.MaxSpeed * 0.1
-				trans.Rotation = float32(math.Atan2(float64(dir.Y), float64(dir.X)))
+				// В идеальном диапазоне [70% - 90%]: останавливаемся
+				vel.X = 0
+				vel.Y = 0
 			}
+			trans.Rotation = float32(math.Atan2(float64(dir.Y), float64(dir.X)))
 		} else {
 			// Оружия нет, просто летим к цели
 			dir := nearestEnemyPos.Sub(myPos).Normalize()
