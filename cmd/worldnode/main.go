@@ -147,6 +147,7 @@ func main() {
 	miningSys := systems.NewMiningSystem(nil)
 	refinerySys := systems.NewRefinerySystem()
 	shipyardSys := systems.NewShipyardSystem()
+	productionSys := systems.NewProductionSystem(bus)
 	econSys := systems.NewEconomySystem()
 	lootSys := systems.NewLootSystem(grid)
 	cleanupSys := systems.NewCleanupSystem(grid)
@@ -163,6 +164,7 @@ func main() {
 		miningSys,
 		refinerySys,
 		shipyardSys,
+		productionSys,
 		econSys,
 		lootSys,
 		cleanupSys,
@@ -283,6 +285,8 @@ func main() {
 			}
 			// Push the fleet roster (with tactics) to the client on auth/reconnect.
 			sendFleetStatus(world, bus, playerID)
+			// Push the crafting catalog + any in-flight queue so the production panel can populate.
+			sendProductionStatus(world, bus, playerID)
 
 		case protocol.PacketType_C_SET_FLEET_TACTICS:
 			var req protocol.SetFleetTactics
@@ -358,6 +362,17 @@ func main() {
 						}
 						break
 					}
+				}
+			}
+
+		case protocol.PacketType_C_CRAFT_RECIPE:
+			var req protocol.CraftRecipeRequest
+			if err := proto.Unmarshal(cmd.Payload, &req); err == nil {
+				if err := systems.TryEnqueueCraft(world, playerID, req.RecipeId); err != nil {
+					sendSystemChat(bus, playerID, fmt.Sprintf("Крафт отклонён: %s", err.Error()))
+				} else {
+					sendProductionStatus(world, bus, playerID)
+					sendInventoryUpdate(world, bus, playerID)
 				}
 			}
 
@@ -1207,6 +1222,16 @@ func sendHangarData(bus messaging.MessageBus, playerID domain.EntityID) {
 	data := &protocol.HangarData{Hulls: hulls, Weapons: weapons, Hullmods: hullmods}
 	payload, _ := proto.Marshal(data)
 	packet := &protocol.Packet{Type: protocol.PacketType_S_HANGAR_DATA, Payload: payload}
+	packetData, _ := proto.Marshal(packet)
+	_ = bus.Publish(fmt.Sprintf("player.%d.response", playerID), packetData)
+}
+
+// sendProductionStatus pushes the player's craft queue + the recipe catalog to the client so the
+// production panel can render the picker and any in-flight jobs.
+func sendProductionStatus(world *ecs.World, bus messaging.MessageBus, playerID domain.EntityID) {
+	status := systems.BuildProductionStatus(world, playerID)
+	payload, _ := proto.Marshal(status)
+	packet := &protocol.Packet{Type: protocol.PacketType_S_PRODUCTION_STATUS, Payload: payload}
 	packetData, _ := proto.Marshal(packet)
 	_ = bus.Publish(fmt.Sprintf("player.%d.response", playerID), packetData)
 }

@@ -552,6 +552,14 @@
             <div id="hangar-panel" style="display:none; flex-direction:column; gap:6px; font-size:0.7rem; max-height:320px; overflow-y:auto;"></div>
         </div>
 
+        <div>
+            <h3 style="font-size: 0.8rem; margin-bottom: 6px; color: var(--accent-cyan); display:flex; justify-content:space-between; align-items:center;">
+                <span>Производство</span>
+                <button class="btn btn-action btn-secondary" style="margin-top:0; padding:2px 8px; font-size:0.65rem;" onclick="toggleProduction()">Показать</button>
+            </h3>
+            <div id="production-panel" style="display:none; flex-direction:column; gap:6px; font-size:0.7rem; max-height:300px; overflow-y:auto;"></div>
+        </div>
+
         <div style="flex-grow: 1; display: flex; flex-direction: column;">
             <h3 style="font-size: 0.8rem; margin-bottom: 6px; color: var(--accent-cyan)">Server Event Log</h3>
             <div class="logs-box" id="event-logs">
@@ -810,6 +818,8 @@
     let focusCounts = {};     // entityID -> number of attackers currently targeting it (focus-fire)
     let fleetRoster = [];     // player's fleet ships with tactics + loadout (from S_FLEET_STATUS)
     let hangarCatalog = null; // { hulls, weapons, hullmods } from S_HANGAR_DATA
+    let productionState = null; // { queue, recipes } from S_PRODUCTION_STATUS
+    let productionStamp = 0;    // wall-clock (ms) when the last status arrived, for local progress interpolation
     let particles = [];
     let damageNumbers = [];
 
@@ -1035,6 +1045,10 @@
         } else if (msg.type === 's_hangar_data' || msg.type === 'hangardata') {
             hangarCatalog = msg.data || null;
             renderHangarPanel();
+        } else if (msg.type === 's_production_status' || msg.type === 'productionstatus') {
+            productionState = msg.data || { queue: [], recipes: [] };
+            productionStamp = Date.now();
+            renderProductionPanel();
         } else if (msg.type === 'chatmessage' || msg.type === 's_chat_message') {
             const sender = msg.data.sender || 'System';
             if (sender === 'System') {
@@ -1624,6 +1638,81 @@
             capacitors: lo.capacitors
         }));
     }
+
+    // ---- Phase 3: Production / crafting ----
+    function toggleProduction() {
+        const panel = document.getElementById('production-panel');
+        if (!panel) return;
+        panel.style.display = (panel.style.display === 'none') ? 'flex' : 'none';
+        // Status is pushed by the server on auth and on a heartbeat while jobs run.
+        renderProductionPanel();
+    }
+
+    function ioSummary(map) {
+        if (!map) return '';
+        return Object.entries(map).map(([k, v]) => `${v}×${k}`).join(', ');
+    }
+
+    function renderProductionPanel() {
+        const panel = document.getElementById('production-panel');
+        if (!panel || panel.style.display === 'none') return;
+        if (!productionState) {
+            panel.innerHTML = '<div style="color:var(--text-muted)">Нет данных о производстве</div>';
+            return;
+        }
+        const queue = productionState.queue || [];
+        const recipes = productionState.recipes || [];
+
+        // Active queue with live (interpolated) progress.
+        const elapsed = (Date.now() - productionStamp) / 1000;
+        let queueHtml = '';
+        queue.forEach((j, idx) => {
+            // Only the head job advances; interpolate it locally between server pushes.
+            let prog = j.progress + (idx === 0 ? elapsed : 0);
+            if (prog > j.total_time) prog = j.total_time;
+            const pct = j.total_time > 0 ? Math.min(100, (prog / j.total_time) * 100) : 0;
+            const eta = Math.max(0, j.total_time - prog);
+            queueHtml += `<div style="display:flex; flex-direction:column; gap:2px;">
+                <div style="display:flex; justify-content:space-between;"><span>${j.name}</span><span style="color:var(--text-muted)">${eta.toFixed(1)}с</span></div>
+                <div style="height:7px; background:#10101e; border-radius:4px; overflow:hidden;"><div style="height:100%; width:${pct}%; background:var(--accent-cyan);"></div></div>
+            </div>`;
+        });
+        if (!queueHtml) queueHtml = '<div style="color:var(--text-muted)">Очередь пуста</div>';
+
+        // Recipe picker grouped by tier.
+        const tierName = { 1: 'Переработка', 2: 'Компоненты', 3: 'Сборка' };
+        let recipeHtml = '';
+        [1, 2, 3].forEach(tier => {
+            const inTier = recipes.filter(r => r.tier === tier);
+            if (!inTier.length) return;
+            recipeHtml += `<div style="color:var(--accent-cyan); margin-top:3px;">${tierName[tier] || ('T' + tier)}</div>`;
+            inTier.forEach(r => {
+                recipeHtml += `<div style="display:flex; justify-content:space-between; align-items:center; gap:4px; border:1px solid rgba(255,255,255,0.08); border-radius:5px; padding:3px 5px;">
+                    <div style="flex:1;">
+                        <div>${r.name} <span style="color:var(--text-muted)">(${r.time_seconds}с)</span></div>
+                        <div style="color:var(--text-muted); font-size:0.6rem;">${ioSummary(r.inputs)} → ${ioSummary(r.outputs)}</div>
+                    </div>
+                    <button class="btn btn-action" style="margin:0; padding:2px 8px; font-size:0.62rem;" onclick="craftRecipe('${r.id}')">+</button>
+                </div>`;
+            });
+        });
+
+        panel.innerHTML = `<div><div style="color:var(--text-muted); margin-bottom:2px;">Очередь</div>${queueHtml}</div>
+            <div><div style="color:var(--text-muted); margin-bottom:2px;">Рецепты</div>${recipeHtml}</div>`;
+    }
+
+    function craftRecipe(recipeId) {
+        if (!(socket && socket.readyState === WebSocket.OPEN)) return;
+        socket.send(JSON.stringify({ action: 'craft_recipe', recipe_id: recipeId }));
+    }
+
+    // Re-render the production queue ~3x/sec for smooth local progress between server pushes.
+    setInterval(() => {
+        const panel = document.getElementById('production-panel');
+        if (panel && panel.style.display !== 'none' && productionState && (productionState.queue || []).length) {
+            renderProductionPanel();
+        }
+    }, 333);
 
     // Switch systems tab
     function switchSystem(sysID) {

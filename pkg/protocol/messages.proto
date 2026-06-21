@@ -47,6 +47,10 @@ enum PacketType {
   C_GET_HANGAR = 29;
   S_HANGAR_DATA = 30;
   C_FIT_SHIP = 31;
+
+  // Phase 3 production / crafting
+  C_CRAFT_RECIPE = 32;
+  S_PRODUCTION_STATUS = 33;
 }
 
 message Packet {
@@ -436,4 +440,30 @@ message VaultStatus {
 message JoinCombatRequest {
   uint32 combat_instance_id = 1;
   uint64 align_with_fleet_id = 2; // 0 for FFA (free for all)
+}
+
+// Phase 3: data-driven crafting.
+message CraftRecipeRequest {
+  string recipe_id = 1;
+}
+
+message RecipeProto {
+  string id = 1;
+  string name = 2;
+  int32 tier = 3;
+  map<string, int32> inputs = 4;
+  map<string, int32> outputs = 5;
+  float time_seconds = 6;
+}
+
+message CraftJobProto {
+  string recipe_id = 1;
+  string name = 2;
+  float progress = 3;
+  float total_time = 4;
+}
+
+message ProductionStatus {
+  repeated CraftJobProto queue = 1;
+  repeated RecipeProto recipes = 2; // the craftable catalog (for the picker)
 }

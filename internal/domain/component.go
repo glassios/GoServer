@@ -244,6 +244,20 @@ type Shipyard struct {
 	Progress float32
 }
 
+// CraftJob is one queued crafting order on a player (Phase 3). Inputs are consumed at enqueue
+// time; outputs are delivered to the player's cargo when Progress reaches TotalTime.
+type CraftJob struct {
+	RecipeID  string
+	Name      string
+	Progress  float32
+	TotalTime float32
+}
+
+// CraftQueue holds a player's pending crafting jobs, processed head-first by ProductionSystem.
+type CraftQueue struct {
+	Jobs []CraftJob
+}
+
 type Loot struct {
 	Credits int64
 }

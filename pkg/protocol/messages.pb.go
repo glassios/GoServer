@@ -61,6 +61,9 @@ const (
 	PacketType_C_GET_HANGAR  PacketType = 29
 	PacketType_S_HANGAR_DATA PacketType = 30
 	PacketType_C_FIT_SHIP    PacketType = 31
+	// Phase 3 production / crafting
+	PacketType_C_CRAFT_RECIPE      PacketType = 32
+	PacketType_S_PRODUCTION_STATUS PacketType = 33
 )
 
 // Enum value maps for PacketType.
@@ -98,6 +101,8 @@ var (
 		29: "C_GET_HANGAR",
 		30: "S_HANGAR_DATA",
 		31: "C_FIT_SHIP",
+		32: "C_CRAFT_RECIPE",
+		33: "S_PRODUCTION_STATUS",
 	}
 	PacketType_value = map[string]int32{
 		"PACKET_UNKNOWN":         0,
@@ -132,6 +137,8 @@ var (
 		"C_GET_HANGAR":           29,
 		"S_HANGAR_DATA":          30,
 		"C_FIT_SHIP":             31,
+		"C_CRAFT_RECIPE":         32,
+		"S_PRODUCTION_STATUS":    33,
 	}
 )
 
@@ -3744,6 +3751,255 @@ func (x *JoinCombatRequest) GetAlignWithFleetId() uint64 {
 	return 0
 }
 
+// Phase 3: data-driven crafting.
+type CraftRecipeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RecipeId      string                 `protobuf:"bytes,1,opt,name=recipe_id,json=recipeId,proto3" json:"recipe_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CraftRecipeRequest) Reset() {
+	*x = CraftRecipeRequest{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CraftRecipeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CraftRecipeRequest) ProtoMessage() {}
+
+func (x *CraftRecipeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CraftRecipeRequest.ProtoReflect.Descriptor instead.
+func (*CraftRecipeRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *CraftRecipeRequest) GetRecipeId() string {
+	if x != nil {
+		return x.RecipeId
+	}
+	return ""
+}
+
+type RecipeProto struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Tier          int32                  `protobuf:"varint,3,opt,name=tier,proto3" json:"tier,omitempty"`
+	Inputs        map[string]int32       `protobuf:"bytes,4,rep,name=inputs,proto3" json:"inputs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	Outputs       map[string]int32       `protobuf:"bytes,5,rep,name=outputs,proto3" json:"outputs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	TimeSeconds   float32                `protobuf:"fixed32,6,opt,name=time_seconds,json=timeSeconds,proto3" json:"time_seconds,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RecipeProto) Reset() {
+	*x = RecipeProto{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecipeProto) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecipeProto) ProtoMessage() {}
+
+func (x *RecipeProto) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecipeProto.ProtoReflect.Descriptor instead.
+func (*RecipeProto) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *RecipeProto) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *RecipeProto) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *RecipeProto) GetTier() int32 {
+	if x != nil {
+		return x.Tier
+	}
+	return 0
+}
+
+func (x *RecipeProto) GetInputs() map[string]int32 {
+	if x != nil {
+		return x.Inputs
+	}
+	return nil
+}
+
+func (x *RecipeProto) GetOutputs() map[string]int32 {
+	if x != nil {
+		return x.Outputs
+	}
+	return nil
+}
+
+func (x *RecipeProto) GetTimeSeconds() float32 {
+	if x != nil {
+		return x.TimeSeconds
+	}
+	return 0
+}
+
+type CraftJobProto struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RecipeId      string                 `protobuf:"bytes,1,opt,name=recipe_id,json=recipeId,proto3" json:"recipe_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Progress      float32                `protobuf:"fixed32,3,opt,name=progress,proto3" json:"progress,omitempty"`
+	TotalTime     float32                `protobuf:"fixed32,4,opt,name=total_time,json=totalTime,proto3" json:"total_time,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CraftJobProto) Reset() {
+	*x = CraftJobProto{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CraftJobProto) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CraftJobProto) ProtoMessage() {}
+
+func (x *CraftJobProto) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CraftJobProto.ProtoReflect.Descriptor instead.
+func (*CraftJobProto) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *CraftJobProto) GetRecipeId() string {
+	if x != nil {
+		return x.RecipeId
+	}
+	return ""
+}
+
+func (x *CraftJobProto) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CraftJobProto) GetProgress() float32 {
+	if x != nil {
+		return x.Progress
+	}
+	return 0
+}
+
+func (x *CraftJobProto) GetTotalTime() float32 {
+	if x != nil {
+		return x.TotalTime
+	}
+	return 0
+}
+
+type ProductionStatus struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Queue         []*CraftJobProto       `protobuf:"bytes,1,rep,name=queue,proto3" json:"queue,omitempty"`
+	Recipes       []*RecipeProto         `protobuf:"bytes,2,rep,name=recipes,proto3" json:"recipes,omitempty"` // the craftable catalog (for the picker)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProductionStatus) Reset() {
+	*x = ProductionStatus{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProductionStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProductionStatus) ProtoMessage() {}
+
+func (x *ProductionStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProductionStatus.ProtoReflect.Descriptor instead.
+func (*ProductionStatus) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *ProductionStatus) GetQueue() []*CraftJobProto {
+	if x != nil {
+		return x.Queue
+	}
+	return nil
+}
+
+func (x *ProductionStatus) GetRecipes() []*RecipeProto {
+	if x != nil {
+		return x.Recipes
+	}
+	return nil
+}
+
 var File_pkg_protocol_messages_proto protoreflect.FileDescriptor
 
 const file_pkg_protocol_messages_proto_rawDesc = "" +
@@ -4112,7 +4368,31 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"\x0fcorporate_items\x18\x03 \x03(\v2\x1b.protocol.ItemInstanceProtoR\x0ecorporateItems\"p\n" +
 	"\x11JoinCombatRequest\x12,\n" +
 	"\x12combat_instance_id\x18\x01 \x01(\rR\x10combatInstanceId\x12-\n" +
-	"\x13align_with_fleet_id\x18\x02 \x01(\x04R\x10alignWithFleetId*\xa5\x05\n" +
+	"\x13align_with_fleet_id\x18\x02 \x01(\x04R\x10alignWithFleetId\"1\n" +
+	"\x12CraftRecipeRequest\x12\x1b\n" +
+	"\trecipe_id\x18\x01 \x01(\tR\brecipeId\"\xd8\x02\n" +
+	"\vRecipeProto\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
+	"\x04tier\x18\x03 \x01(\x05R\x04tier\x129\n" +
+	"\x06inputs\x18\x04 \x03(\v2!.protocol.RecipeProto.InputsEntryR\x06inputs\x12<\n" +
+	"\aoutputs\x18\x05 \x03(\v2\".protocol.RecipeProto.OutputsEntryR\aoutputs\x12!\n" +
+	"\ftime_seconds\x18\x06 \x01(\x02R\vtimeSeconds\x1a9\n" +
+	"\vInputsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\x1a:\n" +
+	"\fOutputsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\"{\n" +
+	"\rCraftJobProto\x12\x1b\n" +
+	"\trecipe_id\x18\x01 \x01(\tR\brecipeId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1a\n" +
+	"\bprogress\x18\x03 \x01(\x02R\bprogress\x12\x1d\n" +
+	"\n" +
+	"total_time\x18\x04 \x01(\x02R\ttotalTime\"r\n" +
+	"\x10ProductionStatus\x12-\n" +
+	"\x05queue\x18\x01 \x03(\v2\x17.protocol.CraftJobProtoR\x05queue\x12/\n" +
+	"\arecipes\x18\x02 \x03(\v2\x15.protocol.RecipeProtoR\arecipes*\xd2\x05\n" +
 	"\n" +
 	"PacketType\x12\x12\n" +
 	"\x0ePACKET_UNKNOWN\x10\x00\x12\x12\n" +
@@ -4150,7 +4430,9 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"\fC_GET_HANGAR\x10\x1d\x12\x11\n" +
 	"\rS_HANGAR_DATA\x10\x1e\x12\x0e\n" +
 	"\n" +
-	"C_FIT_SHIP\x10\x1fB2Z0github.com/Home/galaxy-mmo/pkg/protocol;protocolb\x06proto3"
+	"C_FIT_SHIP\x10\x1f\x12\x12\n" +
+	"\x0eC_CRAFT_RECIPE\x10 \x12\x17\n" +
+	"\x13S_PRODUCTION_STATUS\x10!B2Z0github.com/Home/galaxy-mmo/pkg/protocol;protocolb\x06proto3"
 
 var (
 	file_pkg_protocol_messages_proto_rawDescOnce sync.Once
@@ -4165,7 +4447,7 @@ func file_pkg_protocol_messages_proto_rawDescGZIP() []byte {
 }
 
 var file_pkg_protocol_messages_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_pkg_protocol_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 49)
+var file_pkg_protocol_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 55)
 var file_pkg_protocol_messages_proto_goTypes = []any{
 	(PacketType)(0),                // 0: protocol.PacketType
 	(*Packet)(nil),                 // 1: protocol.Packet
@@ -4213,10 +4495,16 @@ var file_pkg_protocol_messages_proto_goTypes = []any{
 	(*VaultAction)(nil),            // 43: protocol.VaultAction
 	(*VaultStatus)(nil),            // 44: protocol.VaultStatus
 	(*JoinCombatRequest)(nil),      // 45: protocol.JoinCombatRequest
-	nil,                            // 46: protocol.FleetShipProto.FittedWeaponsEntry
-	nil,                            // 47: protocol.FleetStatusShip.FittedWeaponsEntry
-	nil,                            // 48: protocol.HullmodDefProto.OpCostBySizeEntry
-	nil,                            // 49: protocol.FitShipRequest.FittedWeaponsEntry
+	(*CraftRecipeRequest)(nil),     // 46: protocol.CraftRecipeRequest
+	(*RecipeProto)(nil),            // 47: protocol.RecipeProto
+	(*CraftJobProto)(nil),          // 48: protocol.CraftJobProto
+	(*ProductionStatus)(nil),       // 49: protocol.ProductionStatus
+	nil,                            // 50: protocol.FleetShipProto.FittedWeaponsEntry
+	nil,                            // 51: protocol.FleetStatusShip.FittedWeaponsEntry
+	nil,                            // 52: protocol.HullmodDefProto.OpCostBySizeEntry
+	nil,                            // 53: protocol.FitShipRequest.FittedWeaponsEntry
+	nil,                            // 54: protocol.RecipeProto.InputsEntry
+	nil,                            // 55: protocol.RecipeProto.OutputsEntry
 }
 var file_pkg_protocol_messages_proto_depIdxs = []int32{
 	0,  // 0: protocol.Packet.type:type_name -> protocol.PacketType
@@ -4225,26 +4513,30 @@ var file_pkg_protocol_messages_proto_depIdxs = []int32{
 	17, // 3: protocol.MarketData.items:type_name -> protocol.MarketItem
 	19, // 4: protocol.InventoryUpdate.cargo:type_name -> protocol.ItemInstanceProto
 	0,  // 5: protocol.ServerCommand.type:type_name -> protocol.PacketType
-	46, // 6: protocol.FleetShipProto.fitted_weapons:type_name -> protocol.FleetShipProto.FittedWeaponsEntry
+	50, // 6: protocol.FleetShipProto.fitted_weapons:type_name -> protocol.FleetShipProto.FittedWeaponsEntry
 	24, // 7: protocol.SetFleetTactics.ships:type_name -> protocol.FleetShipTactics
-	47, // 8: protocol.FleetStatusShip.fitted_weapons:type_name -> protocol.FleetStatusShip.FittedWeaponsEntry
+	51, // 8: protocol.FleetStatusShip.fitted_weapons:type_name -> protocol.FleetStatusShip.FittedWeaponsEntry
 	26, // 9: protocol.FleetStatus.ships:type_name -> protocol.FleetStatusShip
 	28, // 10: protocol.HullDefProto.slots:type_name -> protocol.WeaponSlotProto
-	48, // 11: protocol.HullmodDefProto.op_cost_by_size:type_name -> protocol.HullmodDefProto.OpCostBySizeEntry
+	52, // 11: protocol.HullmodDefProto.op_cost_by_size:type_name -> protocol.HullmodDefProto.OpCostBySizeEntry
 	29, // 12: protocol.HangarData.hulls:type_name -> protocol.HullDefProto
 	30, // 13: protocol.HangarData.weapons:type_name -> protocol.WeaponDefProto
 	31, // 14: protocol.HangarData.hullmods:type_name -> protocol.HullmodDefProto
-	49, // 15: protocol.FitShipRequest.fitted_weapons:type_name -> protocol.FitShipRequest.FittedWeaponsEntry
+	53, // 15: protocol.FitShipRequest.fitted_weapons:type_name -> protocol.FitShipRequest.FittedWeaponsEntry
 	19, // 16: protocol.PlayerMigrationPayload.cargo_items:type_name -> protocol.ItemInstanceProto
 	23, // 17: protocol.PlayerMigrationPayload.fleet_ships:type_name -> protocol.FleetShipProto
 	34, // 18: protocol.SystemTransferRequest.payload:type_name -> protocol.PlayerMigrationPayload
 	19, // 19: protocol.VaultStatus.personal_items:type_name -> protocol.ItemInstanceProto
 	19, // 20: protocol.VaultStatus.corporate_items:type_name -> protocol.ItemInstanceProto
-	21, // [21:21] is the sub-list for method output_type
-	21, // [21:21] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	54, // 21: protocol.RecipeProto.inputs:type_name -> protocol.RecipeProto.InputsEntry
+	55, // 22: protocol.RecipeProto.outputs:type_name -> protocol.RecipeProto.OutputsEntry
+	48, // 23: protocol.ProductionStatus.queue:type_name -> protocol.CraftJobProto
+	47, // 24: protocol.ProductionStatus.recipes:type_name -> protocol.RecipeProto
+	25, // [25:25] is the sub-list for method output_type
+	25, // [25:25] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_pkg_protocol_messages_proto_init() }
@@ -4258,7 +4550,7 @@ func file_pkg_protocol_messages_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_protocol_messages_proto_rawDesc), len(file_pkg_protocol_messages_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   49,
+			NumMessages:   55,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

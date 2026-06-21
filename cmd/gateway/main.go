@@ -129,6 +129,8 @@ type WSMessage struct {
 	FittedHullmods []string          `json:"fitted_hullmods"`
 	Vents          int32             `json:"vents"`
 	Capacitors     int32             `json:"capacitors"`
+	// Phase 3 crafting
+	RecipeID string `json:"recipe_id"`
 }
 
 func (m *WSMessage) GetTargetID() uint64 {
@@ -537,6 +539,11 @@ func main() {
 				if proto.Unmarshal(packet.Payload, &hangar) == nil {
 					payloadJSON, jsonErr = mOpts.Marshal(&hangar)
 				}
+			case protocol.PacketType_S_PRODUCTION_STATUS:
+				var prod protocol.ProductionStatus
+				if proto.Unmarshal(packet.Payload, &prod) == nil {
+					payloadJSON, jsonErr = mOpts.Marshal(&prod)
+				}
 			}
 
 			if len(payloadJSON) > 0 && jsonErr == nil {
@@ -749,6 +756,25 @@ func main() {
 						data, _ := proto.Marshal(serverCmd)
 						if pubErr := bus.Publish(fmt.Sprintf("system.%d.input", systemID), data); pubErr != nil {
 							logger.Error("Failed to publish WS get_hangar to NATS", zap.Error(pubErr))
+						}
+					}
+
+				case "craft_recipe":
+					wsPlayersMu.RLock()
+					wp, exists := wsConns[conn]
+					wsPlayersMu.RUnlock()
+					if exists {
+						systemID := routingTable.Get(wp.playerID)
+						craftReq := &protocol.CraftRecipeRequest{RecipeId: msg.RecipeID}
+						payload, _ := proto.Marshal(craftReq)
+						serverCmd := &protocol.ServerCommand{
+							PlayerId: uint64(wp.playerID),
+							Type:     protocol.PacketType_C_CRAFT_RECIPE,
+							Payload:  payload,
+						}
+						data, _ := proto.Marshal(serverCmd)
+						if pubErr := bus.Publish(fmt.Sprintf("system.%d.input", systemID), data); pubErr != nil {
+							logger.Error("Failed to publish WS craft_recipe to NATS", zap.Error(pubErr))
 						}
 					}
 
