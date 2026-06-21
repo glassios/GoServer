@@ -106,15 +106,24 @@ func BuildProductionStatus(world *ecs.World, playerID domain.EntityID) *protocol
 		}
 	}
 
+	var research *domain.PlayerResearch
+	if rVal, ok := world.GetComponent(playerID, domain.PlayerResearch{}); ok {
+		research = rVal.(*domain.PlayerResearch)
+	} else {
+		research = domain.NewPlayerResearch()
+	}
+
 	for i := range domain.StockRecipes {
 		r := &domain.StockRecipes[i]
 		status.Recipes = append(status.Recipes, &protocol.RecipeProto{
-			Id:          r.ID,
-			Name:        r.Name,
-			Tier:        r.Tier,
-			Inputs:      r.Inputs,
-			Outputs:     r.Outputs,
-			TimeSeconds: r.TimeSeconds,
+			Id:               r.ID,
+			Name:             r.Name,
+			Tier:             r.Tier,
+			Inputs:           r.Inputs,
+			Outputs:          r.Outputs,
+			TimeSeconds:      r.TimeSeconds,
+			Locked:           !research.RecipeUnlocked(r),
+			RequiredResearch: r.RequiredResearch,
 		})
 	}
 	return status
@@ -127,6 +136,13 @@ func TryEnqueueCraft(world *ecs.World, playerID domain.EntityID, recipeID string
 	recipe := domain.RecipeByID(recipeID)
 	if recipe == nil {
 		return fmt.Errorf("неизвестный рецепт")
+	}
+	// Research gating: locked recipes can't be crafted until their project is completed.
+	if recipe.RequiredResearch != "" {
+		rVal, ok := world.GetComponent(playerID, domain.PlayerResearch{})
+		if !ok || !rVal.(*domain.PlayerResearch).RecipeUnlocked(recipe) {
+			return fmt.Errorf("требуется исследование")
+		}
 	}
 	cargoVal, ok := world.GetComponent(playerID, domain.Cargo{})
 	if !ok {

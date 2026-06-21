@@ -149,6 +149,7 @@ func main() {
 	refinerySys := systems.NewRefinerySystem()
 	shipyardSys := systems.NewShipyardSystem()
 	productionSys := systems.NewProductionSystem(bus)
+	researchSys := systems.NewResearchSystem(bus)
 	econSys := systems.NewEconomySystem()
 	lootSys := systems.NewLootSystem(grid)
 	cleanupSys := systems.NewCleanupSystem(grid)
@@ -166,6 +167,7 @@ func main() {
 		refinerySys,
 		shipyardSys,
 		productionSys,
+		researchSys,
 		econSys,
 		lootSys,
 		cleanupSys,
@@ -260,6 +262,11 @@ func main() {
 						} else {
 							world.AddComponent(playerID, domain.NewPlayerProgress())
 						}
+						if comps.Research != nil {
+							world.AddComponent(playerID, comps.Research)
+						} else {
+							world.AddComponent(playerID, domain.NewPlayerResearch())
+						}
 						grid.Insert(playerID, comps.Transform.X, comps.Transform.Y)
 						logger.Info("Loaded player profile from repository", zap.Uint64("playerID", uint64(playerID)), zap.String("name", pData.Name))
 						loaded = true
@@ -285,6 +292,7 @@ func main() {
 					}
 					world.AddComponent(playerID, &domain.Fleet{Ships: ships})
 					world.AddComponent(playerID, domain.NewPlayerProgress())
+					world.AddComponent(playerID, domain.NewPlayerResearch())
 
 					grid.Insert(playerID, 0, 0)
 					logger.Info("Created fresh player entity", zap.Uint64("playerID", uint64(playerID)), zap.String("name", string(cmd.Payload)))
@@ -296,6 +304,8 @@ func main() {
 			sendProductionStatus(world, bus, playerID)
 			// Push skill/XP progression so the skills panel can populate.
 			systems.PublishPlayerProgress(bus, world, playerID)
+			// Push research status so the research panel can populate.
+			systems.PublishResearchStatus(bus, world, playerID)
 
 		case protocol.PacketType_C_SET_FLEET_TACTICS:
 			var req protocol.SetFleetTactics
@@ -382,6 +392,20 @@ func main() {
 				} else {
 					sendProductionStatus(world, bus, playerID)
 					sendInventoryUpdate(world, bus, playerID)
+				}
+			}
+
+		case protocol.PacketType_C_START_RESEARCH:
+			var req protocol.StartResearchRequest
+			if err := proto.Unmarshal(cmd.Payload, &req); err == nil {
+				if err := systems.TryStartResearch(world, playerID, req.ProjectId); err != nil {
+					sendSystemChat(bus, playerID, fmt.Sprintf("Исследование отклонено: %s", err.Error()))
+				} else {
+					systems.PublishResearchStatus(bus, world, playerID)
+					sendInventoryUpdate(world, bus, playerID) // credits changed
+					if playerRepo != nil {
+						savePlayerNow(world, playerRepo, playerID, logger)
+					}
 				}
 			}
 
@@ -1075,6 +1099,9 @@ func saveActivePlayers(world *ecs.World, repo domain.PlayerRepository, systemID 
 		if pgVal, foundPg := world.GetComponent(id, domain.PlayerProgress{}); foundPg {
 			comps.Progress = pgVal.(*domain.PlayerProgress)
 		}
+		if rVal, foundR := world.GetComponent(id, domain.PlayerResearch{}); foundR {
+			comps.Research = rVal.(*domain.PlayerResearch)
+		}
 
 		err := repo.Save(ctx, player, comps)
 		if err != nil {
@@ -1282,6 +1309,9 @@ func savePlayerNow(world *ecs.World, repo domain.PlayerRepository, playerID doma
 	}
 	if pgVal, foundPg := world.GetComponent(playerID, domain.PlayerProgress{}); foundPg {
 		comps.Progress = pgVal.(*domain.PlayerProgress)
+	}
+	if rVal, foundR := world.GetComponent(playerID, domain.PlayerResearch{}); foundR {
+		comps.Research = rVal.(*domain.PlayerResearch)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

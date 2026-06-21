@@ -15,6 +15,7 @@ type PlayerComponents struct {
 	ShipConfig *ShipConfig
 	Fleet      *Fleet
 	Progress   *PlayerProgress
+	Research   *PlayerResearch
 }
 
 type AsteroidSnapshot struct {
@@ -73,7 +74,7 @@ type WorldRepository interface {
 	SaveAsteroids(ctx context.Context, systemID uint32, asteroids []AsteroidSnapshot) error
 	SaveStations(ctx context.Context, systemID uint32, stations []StationSnapshot) error
 	LoadWorld(ctx context.Context, systemID uint32) (*WorldSnapshot, error)
-	
+
 	LoadPlayerVault(ctx context.Context, accountID uint64, stationID uint64) ([]ItemInstance, error)
 	SavePlayerVault(ctx context.Context, accountID uint64, stationID uint64, items []ItemInstance) error
 	LoadCorporationVault(ctx context.Context, corpID uint32, stationID uint64) ([]ItemInstance, error)
@@ -106,7 +107,7 @@ type CorporationRepository interface {
 	GetByName(ctx context.Context, name string) (*Corporation, error)
 	AddMember(ctx context.Context, corpID uint32, accountID uint64, role string) error
 	RemoveMember(ctx context.Context, accountID uint64) error
-	GetMemberRole(ctx context.Context, accountID uint64) (uint32, string, error) // returns corpID, role, err
+	GetMemberRole(ctx context.Context, accountID uint64) (uint32, string, error)  // returns corpID, role, err
 	GetMembers(ctx context.Context, corpID uint32) (map[uint64]string, error)     // returns accountID -> role
 	UpdateWallet(ctx context.Context, corpID uint32, amount int64) (int64, error) // returns new balance
 }

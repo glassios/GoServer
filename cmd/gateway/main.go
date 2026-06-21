@@ -131,6 +131,8 @@ type WSMessage struct {
 	Capacitors     int32             `json:"capacitors"`
 	// Phase 3 crafting
 	RecipeID string `json:"recipe_id"`
+	// Phase 3 research
+	ProjectID string `json:"project_id"`
 }
 
 func (m *WSMessage) GetTargetID() uint64 {
@@ -549,6 +551,11 @@ func main() {
 				if proto.Unmarshal(packet.Payload, &prog) == nil {
 					payloadJSON, jsonErr = mOpts.Marshal(&prog)
 				}
+			case protocol.PacketType_S_RESEARCH_STATUS:
+				var research protocol.ResearchStatus
+				if proto.Unmarshal(packet.Payload, &research) == nil {
+					payloadJSON, jsonErr = mOpts.Marshal(&research)
+				}
 			}
 
 			if len(payloadJSON) > 0 && jsonErr == nil {
@@ -761,6 +768,25 @@ func main() {
 						data, _ := proto.Marshal(serverCmd)
 						if pubErr := bus.Publish(fmt.Sprintf("system.%d.input", systemID), data); pubErr != nil {
 							logger.Error("Failed to publish WS get_hangar to NATS", zap.Error(pubErr))
+						}
+					}
+
+				case "start_research":
+					wsPlayersMu.RLock()
+					wp, exists := wsConns[conn]
+					wsPlayersMu.RUnlock()
+					if exists {
+						systemID := routingTable.Get(wp.playerID)
+						req := &protocol.StartResearchRequest{ProjectId: msg.ProjectID}
+						payload, _ := proto.Marshal(req)
+						serverCmd := &protocol.ServerCommand{
+							PlayerId: uint64(wp.playerID),
+							Type:     protocol.PacketType_C_START_RESEARCH,
+							Payload:  payload,
+						}
+						data, _ := proto.Marshal(serverCmd)
+						if pubErr := bus.Publish(fmt.Sprintf("system.%d.input", systemID), data); pubErr != nil {
+							logger.Error("Failed to publish WS start_research to NATS", zap.Error(pubErr))
 						}
 					}
 

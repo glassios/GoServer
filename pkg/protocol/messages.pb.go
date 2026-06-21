@@ -66,6 +66,9 @@ const (
 	PacketType_S_PRODUCTION_STATUS PacketType = 33
 	// Phase 3 skills / progression
 	PacketType_S_PLAYER_PROGRESS PacketType = 34
+	// Phase 3 research
+	PacketType_C_START_RESEARCH  PacketType = 35
+	PacketType_S_RESEARCH_STATUS PacketType = 36
 )
 
 // Enum value maps for PacketType.
@@ -106,6 +109,8 @@ var (
 		32: "C_CRAFT_RECIPE",
 		33: "S_PRODUCTION_STATUS",
 		34: "S_PLAYER_PROGRESS",
+		35: "C_START_RESEARCH",
+		36: "S_RESEARCH_STATUS",
 	}
 	PacketType_value = map[string]int32{
 		"PACKET_UNKNOWN":         0,
@@ -143,6 +148,8 @@ var (
 		"C_CRAFT_RECIPE":         32,
 		"S_PRODUCTION_STATUS":    33,
 		"S_PLAYER_PROGRESS":      34,
+		"C_START_RESEARCH":       35,
+		"S_RESEARCH_STATUS":      36,
 	}
 )
 
@@ -2844,41 +2851,42 @@ func (x *FitShipRequest) GetCapacitors() int32 {
 }
 
 type PlayerMigrationPayload struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	PlayerId        uint64                 `protobuf:"varint,1,opt,name=player_id,json=playerId,proto3" json:"player_id,omitempty"`
-	X               float32                `protobuf:"fixed32,2,opt,name=x,proto3" json:"x,omitempty"`
-	Y               float32                `protobuf:"fixed32,3,opt,name=y,proto3" json:"y,omitempty"`
-	Rotation        float32                `protobuf:"fixed32,4,opt,name=rotation,proto3" json:"rotation,omitempty"`
-	Vx              float32                `protobuf:"fixed32,5,opt,name=vx,proto3" json:"vx,omitempty"`
-	Vy              float32                `protobuf:"fixed32,6,opt,name=vy,proto3" json:"vy,omitempty"`
-	Hp              int32                  `protobuf:"varint,7,opt,name=hp,proto3" json:"hp,omitempty"`
-	MaxHp           int32                  `protobuf:"varint,8,opt,name=max_hp,json=maxHp,proto3" json:"max_hp,omitempty"`
-	Shield          int32                  `protobuf:"varint,9,opt,name=shield,proto3" json:"shield,omitempty"`
-	MaxShield       int32                  `protobuf:"varint,10,opt,name=max_shield,json=maxShield,proto3" json:"max_shield,omitempty"`
-	ShieldRegenRate float32                `protobuf:"fixed32,11,opt,name=shield_regen_rate,json=shieldRegenRate,proto3" json:"shield_regen_rate,omitempty"`
-	WeaponType      string                 `protobuf:"bytes,12,opt,name=weapon_type,json=weaponType,proto3" json:"weapon_type,omitempty"`
-	WeaponDamage    int32                  `protobuf:"varint,13,opt,name=weapon_damage,json=weaponDamage,proto3" json:"weapon_damage,omitempty"`
-	WeaponRange     float32                `protobuf:"fixed32,14,opt,name=weapon_range,json=weaponRange,proto3" json:"weapon_range,omitempty"`
-	WeaponCooldown  float32                `protobuf:"fixed32,15,opt,name=weapon_cooldown,json=weaponCooldown,proto3" json:"weapon_cooldown,omitempty"`
-	CargoCapacity   int32                  `protobuf:"varint,16,opt,name=cargo_capacity,json=cargoCapacity,proto3" json:"cargo_capacity,omitempty"`
-	CargoItems      []*ItemInstanceProto   `protobuf:"bytes,17,rep,name=cargo_items,json=cargoItems,proto3" json:"cargo_items,omitempty"`
-	MiningPower     float32                `protobuf:"fixed32,18,opt,name=mining_power,json=miningPower,proto3" json:"mining_power,omitempty"`
-	MiningRange     float32                `protobuf:"fixed32,19,opt,name=mining_range,json=miningRange,proto3" json:"mining_range,omitempty"`
-	ShipType        string                 `protobuf:"bytes,20,opt,name=ship_type,json=shipType,proto3" json:"ship_type,omitempty"`
-	MaxSpeed        float32                `protobuf:"fixed32,21,opt,name=max_speed,json=maxSpeed,proto3" json:"max_speed,omitempty"`
-	TurnRate        float32                `protobuf:"fixed32,22,opt,name=turn_rate,json=turnRate,proto3" json:"turn_rate,omitempty"`
-	AccountId       uint64                 `protobuf:"varint,23,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
-	PlayerName      string                 `protobuf:"bytes,24,opt,name=player_name,json=playerName,proto3" json:"player_name,omitempty"`
-	Credits         int64                  `protobuf:"varint,25,opt,name=credits,proto3" json:"credits,omitempty"`
-	SessionId       string                 `protobuf:"bytes,26,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	FactionId       uint32                 `protobuf:"varint,27,opt,name=faction_id,json=factionId,proto3" json:"faction_id,omitempty"`
-	IsNpc           bool                   `protobuf:"varint,28,opt,name=is_npc,json=isNpc,proto3" json:"is_npc,omitempty"`
-	AiBehavior      string                 `protobuf:"bytes,29,opt,name=ai_behavior,json=aiBehavior,proto3" json:"ai_behavior,omitempty"`
-	AiTargetId      uint64                 `protobuf:"varint,30,opt,name=ai_target_id,json=aiTargetId,proto3" json:"ai_target_id,omitempty"`
-	FleetShips      []*FleetShipProto      `protobuf:"bytes,31,rep,name=fleet_ships,json=fleetShips,proto3" json:"fleet_ships,omitempty"`
-	Skills          []*SkillProto          `protobuf:"bytes,32,rep,name=skills,proto3" json:"skills,omitempty"` // Phase 3: carry progression across jump gates
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	PlayerId          uint64                 `protobuf:"varint,1,opt,name=player_id,json=playerId,proto3" json:"player_id,omitempty"`
+	X                 float32                `protobuf:"fixed32,2,opt,name=x,proto3" json:"x,omitempty"`
+	Y                 float32                `protobuf:"fixed32,3,opt,name=y,proto3" json:"y,omitempty"`
+	Rotation          float32                `protobuf:"fixed32,4,opt,name=rotation,proto3" json:"rotation,omitempty"`
+	Vx                float32                `protobuf:"fixed32,5,opt,name=vx,proto3" json:"vx,omitempty"`
+	Vy                float32                `protobuf:"fixed32,6,opt,name=vy,proto3" json:"vy,omitempty"`
+	Hp                int32                  `protobuf:"varint,7,opt,name=hp,proto3" json:"hp,omitempty"`
+	MaxHp             int32                  `protobuf:"varint,8,opt,name=max_hp,json=maxHp,proto3" json:"max_hp,omitempty"`
+	Shield            int32                  `protobuf:"varint,9,opt,name=shield,proto3" json:"shield,omitempty"`
+	MaxShield         int32                  `protobuf:"varint,10,opt,name=max_shield,json=maxShield,proto3" json:"max_shield,omitempty"`
+	ShieldRegenRate   float32                `protobuf:"fixed32,11,opt,name=shield_regen_rate,json=shieldRegenRate,proto3" json:"shield_regen_rate,omitempty"`
+	WeaponType        string                 `protobuf:"bytes,12,opt,name=weapon_type,json=weaponType,proto3" json:"weapon_type,omitempty"`
+	WeaponDamage      int32                  `protobuf:"varint,13,opt,name=weapon_damage,json=weaponDamage,proto3" json:"weapon_damage,omitempty"`
+	WeaponRange       float32                `protobuf:"fixed32,14,opt,name=weapon_range,json=weaponRange,proto3" json:"weapon_range,omitempty"`
+	WeaponCooldown    float32                `protobuf:"fixed32,15,opt,name=weapon_cooldown,json=weaponCooldown,proto3" json:"weapon_cooldown,omitempty"`
+	CargoCapacity     int32                  `protobuf:"varint,16,opt,name=cargo_capacity,json=cargoCapacity,proto3" json:"cargo_capacity,omitempty"`
+	CargoItems        []*ItemInstanceProto   `protobuf:"bytes,17,rep,name=cargo_items,json=cargoItems,proto3" json:"cargo_items,omitempty"`
+	MiningPower       float32                `protobuf:"fixed32,18,opt,name=mining_power,json=miningPower,proto3" json:"mining_power,omitempty"`
+	MiningRange       float32                `protobuf:"fixed32,19,opt,name=mining_range,json=miningRange,proto3" json:"mining_range,omitempty"`
+	ShipType          string                 `protobuf:"bytes,20,opt,name=ship_type,json=shipType,proto3" json:"ship_type,omitempty"`
+	MaxSpeed          float32                `protobuf:"fixed32,21,opt,name=max_speed,json=maxSpeed,proto3" json:"max_speed,omitempty"`
+	TurnRate          float32                `protobuf:"fixed32,22,opt,name=turn_rate,json=turnRate,proto3" json:"turn_rate,omitempty"`
+	AccountId         uint64                 `protobuf:"varint,23,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	PlayerName        string                 `protobuf:"bytes,24,opt,name=player_name,json=playerName,proto3" json:"player_name,omitempty"`
+	Credits           int64                  `protobuf:"varint,25,opt,name=credits,proto3" json:"credits,omitempty"`
+	SessionId         string                 `protobuf:"bytes,26,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	FactionId         uint32                 `protobuf:"varint,27,opt,name=faction_id,json=factionId,proto3" json:"faction_id,omitempty"`
+	IsNpc             bool                   `protobuf:"varint,28,opt,name=is_npc,json=isNpc,proto3" json:"is_npc,omitempty"`
+	AiBehavior        string                 `protobuf:"bytes,29,opt,name=ai_behavior,json=aiBehavior,proto3" json:"ai_behavior,omitempty"`
+	AiTargetId        uint64                 `protobuf:"varint,30,opt,name=ai_target_id,json=aiTargetId,proto3" json:"ai_target_id,omitempty"`
+	FleetShips        []*FleetShipProto      `protobuf:"bytes,31,rep,name=fleet_ships,json=fleetShips,proto3" json:"fleet_ships,omitempty"`
+	Skills            []*SkillProto          `protobuf:"bytes,32,rep,name=skills,proto3" json:"skills,omitempty"`                                                // Phase 3: carry progression across jump gates
+	CompletedResearch []string               `protobuf:"bytes,33,rep,name=completed_research,json=completedResearch,proto3" json:"completed_research,omitempty"` // Phase 3: carry completed research across jump gates
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *PlayerMigrationPayload) Reset() {
@@ -3131,6 +3139,13 @@ func (x *PlayerMigrationPayload) GetFleetShips() []*FleetShipProto {
 func (x *PlayerMigrationPayload) GetSkills() []*SkillProto {
 	if x != nil {
 		return x.Skills
+	}
+	return nil
+}
+
+func (x *PlayerMigrationPayload) GetCompletedResearch() []string {
+	if x != nil {
+		return x.CompletedResearch
 	}
 	return nil
 }
@@ -3809,15 +3824,17 @@ func (x *CraftRecipeRequest) GetRecipeId() string {
 }
 
 type RecipeProto struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Tier          int32                  `protobuf:"varint,3,opt,name=tier,proto3" json:"tier,omitempty"`
-	Inputs        map[string]int32       `protobuf:"bytes,4,rep,name=inputs,proto3" json:"inputs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
-	Outputs       map[string]int32       `protobuf:"bytes,5,rep,name=outputs,proto3" json:"outputs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
-	TimeSeconds   float32                `protobuf:"fixed32,6,opt,name=time_seconds,json=timeSeconds,proto3" json:"time_seconds,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name             string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Tier             int32                  `protobuf:"varint,3,opt,name=tier,proto3" json:"tier,omitempty"`
+	Inputs           map[string]int32       `protobuf:"bytes,4,rep,name=inputs,proto3" json:"inputs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	Outputs          map[string]int32       `protobuf:"bytes,5,rep,name=outputs,proto3" json:"outputs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	TimeSeconds      float32                `protobuf:"fixed32,6,opt,name=time_seconds,json=timeSeconds,proto3" json:"time_seconds,omitempty"`
+	Locked           bool                   `protobuf:"varint,7,opt,name=locked,proto3" json:"locked,omitempty"`                                            // true if gated by research the player hasn't completed
+	RequiredResearch string                 `protobuf:"bytes,8,opt,name=required_research,json=requiredResearch,proto3" json:"required_research,omitempty"` // research project ID gating this recipe ("" = none)
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *RecipeProto) Reset() {
@@ -3890,6 +3907,20 @@ func (x *RecipeProto) GetTimeSeconds() float32 {
 		return x.TimeSeconds
 	}
 	return 0
+}
+
+func (x *RecipeProto) GetLocked() bool {
+	if x != nil {
+		return x.Locked
+	}
+	return false
+}
+
+func (x *RecipeProto) GetRequiredResearch() string {
+	if x != nil {
+		return x.RequiredResearch
+	}
+	return ""
 }
 
 type CraftJobProto struct {
@@ -4121,6 +4152,203 @@ func (*PlayerProgressMsg) Descriptor() ([]byte, []int) {
 func (x *PlayerProgressMsg) GetSkills() []*SkillProto {
 	if x != nil {
 		return x.Skills
+	}
+	return nil
+}
+
+// Phase 3: research.
+type StartResearchRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StartResearchRequest) Reset() {
+	*x = StartResearchRequest{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartResearchRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartResearchRequest) ProtoMessage() {}
+
+func (x *StartResearchRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartResearchRequest.ProtoReflect.Descriptor instead.
+func (*StartResearchRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *StartResearchRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+type ResearchProjectProto struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Cost          int64                  `protobuf:"varint,3,opt,name=cost,proto3" json:"cost,omitempty"`
+	TimeSeconds   float32                `protobuf:"fixed32,4,opt,name=time_seconds,json=timeSeconds,proto3" json:"time_seconds,omitempty"`
+	Prereqs       []string               `protobuf:"bytes,5,rep,name=prereqs,proto3" json:"prereqs,omitempty"`
+	Unlocks       []string               `protobuf:"bytes,6,rep,name=unlocks,proto3" json:"unlocks,omitempty"`
+	Status        string                 `protobuf:"bytes,7,opt,name=status,proto3" json:"status,omitempty"`                          // locked | available | active | completed
+	Progress      float32                `protobuf:"fixed32,8,opt,name=progress,proto3" json:"progress,omitempty"`                    // for the active project
+	TotalTime     float32                `protobuf:"fixed32,9,opt,name=total_time,json=totalTime,proto3" json:"total_time,omitempty"` // for the active project
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResearchProjectProto) Reset() {
+	*x = ResearchProjectProto{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[52]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResearchProjectProto) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResearchProjectProto) ProtoMessage() {}
+
+func (x *ResearchProjectProto) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[52]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResearchProjectProto.ProtoReflect.Descriptor instead.
+func (*ResearchProjectProto) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{52}
+}
+
+func (x *ResearchProjectProto) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ResearchProjectProto) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ResearchProjectProto) GetCost() int64 {
+	if x != nil {
+		return x.Cost
+	}
+	return 0
+}
+
+func (x *ResearchProjectProto) GetTimeSeconds() float32 {
+	if x != nil {
+		return x.TimeSeconds
+	}
+	return 0
+}
+
+func (x *ResearchProjectProto) GetPrereqs() []string {
+	if x != nil {
+		return x.Prereqs
+	}
+	return nil
+}
+
+func (x *ResearchProjectProto) GetUnlocks() []string {
+	if x != nil {
+		return x.Unlocks
+	}
+	return nil
+}
+
+func (x *ResearchProjectProto) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *ResearchProjectProto) GetProgress() float32 {
+	if x != nil {
+		return x.Progress
+	}
+	return 0
+}
+
+func (x *ResearchProjectProto) GetTotalTime() float32 {
+	if x != nil {
+		return x.TotalTime
+	}
+	return 0
+}
+
+type ResearchStatus struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Projects      []*ResearchProjectProto `protobuf:"bytes,1,rep,name=projects,proto3" json:"projects,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResearchStatus) Reset() {
+	*x = ResearchStatus{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResearchStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResearchStatus) ProtoMessage() {}
+
+func (x *ResearchStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResearchStatus.ProtoReflect.Descriptor instead.
+func (*ResearchStatus) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{53}
+}
+
+func (x *ResearchStatus) GetProjects() []*ResearchProjectProto {
+	if x != nil {
+		return x.Projects
 	}
 	return nil
 }
@@ -4403,7 +4631,7 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"capacitors\x1a@\n" +
 	"\x12FittedWeaponsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x86\b\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb5\b\n" +
 	"\x16PlayerMigrationPayload\x12\x1b\n" +
 	"\tplayer_id\x18\x01 \x01(\x04R\bplayerId\x12\f\n" +
 	"\x01x\x18\x02 \x01(\x02R\x01x\x12\f\n" +
@@ -4447,7 +4675,8 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"aiTargetId\x129\n" +
 	"\vfleet_ships\x18\x1f \x03(\v2\x18.protocol.FleetShipProtoR\n" +
 	"fleetShips\x12,\n" +
-	"\x06skills\x18  \x03(\v2\x14.protocol.SkillProtoR\x06skills\"\xcc\x01\n" +
+	"\x06skills\x18  \x03(\v2\x14.protocol.SkillProtoR\x06skills\x12-\n" +
+	"\x12completed_research\x18! \x03(\tR\x11completedResearch\"\xcc\x01\n" +
 	"\x15SystemTransferRequest\x12\x1b\n" +
 	"\tplayer_id\x18\x01 \x01(\x04R\bplayerId\x12(\n" +
 	"\x10target_system_id\x18\x02 \x01(\rR\x0etargetSystemId\x12\x17\n" +
@@ -4496,14 +4725,16 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"\x12combat_instance_id\x18\x01 \x01(\rR\x10combatInstanceId\x12-\n" +
 	"\x13align_with_fleet_id\x18\x02 \x01(\x04R\x10alignWithFleetId\"1\n" +
 	"\x12CraftRecipeRequest\x12\x1b\n" +
-	"\trecipe_id\x18\x01 \x01(\tR\brecipeId\"\xd8\x02\n" +
+	"\trecipe_id\x18\x01 \x01(\tR\brecipeId\"\x9d\x03\n" +
 	"\vRecipeProto\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
 	"\x04tier\x18\x03 \x01(\x05R\x04tier\x129\n" +
 	"\x06inputs\x18\x04 \x03(\v2!.protocol.RecipeProto.InputsEntryR\x06inputs\x12<\n" +
 	"\aoutputs\x18\x05 \x03(\v2\".protocol.RecipeProto.OutputsEntryR\aoutputs\x12!\n" +
-	"\ftime_seconds\x18\x06 \x01(\x02R\vtimeSeconds\x1a9\n" +
+	"\ftime_seconds\x18\x06 \x01(\x02R\vtimeSeconds\x12\x16\n" +
+	"\x06locked\x18\a \x01(\bR\x06locked\x12+\n" +
+	"\x11required_research\x18\b \x01(\tR\x10requiredResearch\x1a9\n" +
 	"\vInputsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\x1a:\n" +
@@ -4526,7 +4757,23 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"\x02xp\x18\x03 \x01(\x05R\x02xp\x12\x17\n" +
 	"\axp_next\x18\x04 \x01(\x05R\x06xpNext\"A\n" +
 	"\x11PlayerProgressMsg\x12,\n" +
-	"\x06skills\x18\x01 \x03(\v2\x14.protocol.SkillProtoR\x06skills*\xe9\x05\n" +
+	"\x06skills\x18\x01 \x03(\v2\x14.protocol.SkillProtoR\x06skills\"5\n" +
+	"\x14StartResearchRequest\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\"\xf8\x01\n" +
+	"\x14ResearchProjectProto\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
+	"\x04cost\x18\x03 \x01(\x03R\x04cost\x12!\n" +
+	"\ftime_seconds\x18\x04 \x01(\x02R\vtimeSeconds\x12\x18\n" +
+	"\aprereqs\x18\x05 \x03(\tR\aprereqs\x12\x18\n" +
+	"\aunlocks\x18\x06 \x03(\tR\aunlocks\x12\x16\n" +
+	"\x06status\x18\a \x01(\tR\x06status\x12\x1a\n" +
+	"\bprogress\x18\b \x01(\x02R\bprogress\x12\x1d\n" +
+	"\n" +
+	"total_time\x18\t \x01(\x02R\ttotalTime\"L\n" +
+	"\x0eResearchStatus\x12:\n" +
+	"\bprojects\x18\x01 \x03(\v2\x1e.protocol.ResearchProjectProtoR\bprojects*\x96\x06\n" +
 	"\n" +
 	"PacketType\x12\x12\n" +
 	"\x0ePACKET_UNKNOWN\x10\x00\x12\x12\n" +
@@ -4567,7 +4814,9 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"C_FIT_SHIP\x10\x1f\x12\x12\n" +
 	"\x0eC_CRAFT_RECIPE\x10 \x12\x17\n" +
 	"\x13S_PRODUCTION_STATUS\x10!\x12\x15\n" +
-	"\x11S_PLAYER_PROGRESS\x10\"B2Z0github.com/Home/galaxy-mmo/pkg/protocol;protocolb\x06proto3"
+	"\x11S_PLAYER_PROGRESS\x10\"\x12\x14\n" +
+	"\x10C_START_RESEARCH\x10#\x12\x15\n" +
+	"\x11S_RESEARCH_STATUS\x10$B2Z0github.com/Home/galaxy-mmo/pkg/protocol;protocolb\x06proto3"
 
 var (
 	file_pkg_protocol_messages_proto_rawDescOnce sync.Once
@@ -4582,7 +4831,7 @@ func file_pkg_protocol_messages_proto_rawDescGZIP() []byte {
 }
 
 var file_pkg_protocol_messages_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_pkg_protocol_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 57)
+var file_pkg_protocol_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 60)
 var file_pkg_protocol_messages_proto_goTypes = []any{
 	(PacketType)(0),                // 0: protocol.PacketType
 	(*Packet)(nil),                 // 1: protocol.Packet
@@ -4636,12 +4885,15 @@ var file_pkg_protocol_messages_proto_goTypes = []any{
 	(*ProductionStatus)(nil),       // 49: protocol.ProductionStatus
 	(*SkillProto)(nil),             // 50: protocol.SkillProto
 	(*PlayerProgressMsg)(nil),      // 51: protocol.PlayerProgressMsg
-	nil,                            // 52: protocol.FleetShipProto.FittedWeaponsEntry
-	nil,                            // 53: protocol.FleetStatusShip.FittedWeaponsEntry
-	nil,                            // 54: protocol.HullmodDefProto.OpCostBySizeEntry
-	nil,                            // 55: protocol.FitShipRequest.FittedWeaponsEntry
-	nil,                            // 56: protocol.RecipeProto.InputsEntry
-	nil,                            // 57: protocol.RecipeProto.OutputsEntry
+	(*StartResearchRequest)(nil),   // 52: protocol.StartResearchRequest
+	(*ResearchProjectProto)(nil),   // 53: protocol.ResearchProjectProto
+	(*ResearchStatus)(nil),         // 54: protocol.ResearchStatus
+	nil,                            // 55: protocol.FleetShipProto.FittedWeaponsEntry
+	nil,                            // 56: protocol.FleetStatusShip.FittedWeaponsEntry
+	nil,                            // 57: protocol.HullmodDefProto.OpCostBySizeEntry
+	nil,                            // 58: protocol.FitShipRequest.FittedWeaponsEntry
+	nil,                            // 59: protocol.RecipeProto.InputsEntry
+	nil,                            // 60: protocol.RecipeProto.OutputsEntry
 }
 var file_pkg_protocol_messages_proto_depIdxs = []int32{
 	0,  // 0: protocol.Packet.type:type_name -> protocol.PacketType
@@ -4650,32 +4902,33 @@ var file_pkg_protocol_messages_proto_depIdxs = []int32{
 	17, // 3: protocol.MarketData.items:type_name -> protocol.MarketItem
 	19, // 4: protocol.InventoryUpdate.cargo:type_name -> protocol.ItemInstanceProto
 	0,  // 5: protocol.ServerCommand.type:type_name -> protocol.PacketType
-	52, // 6: protocol.FleetShipProto.fitted_weapons:type_name -> protocol.FleetShipProto.FittedWeaponsEntry
+	55, // 6: protocol.FleetShipProto.fitted_weapons:type_name -> protocol.FleetShipProto.FittedWeaponsEntry
 	24, // 7: protocol.SetFleetTactics.ships:type_name -> protocol.FleetShipTactics
-	53, // 8: protocol.FleetStatusShip.fitted_weapons:type_name -> protocol.FleetStatusShip.FittedWeaponsEntry
+	56, // 8: protocol.FleetStatusShip.fitted_weapons:type_name -> protocol.FleetStatusShip.FittedWeaponsEntry
 	26, // 9: protocol.FleetStatus.ships:type_name -> protocol.FleetStatusShip
 	28, // 10: protocol.HullDefProto.slots:type_name -> protocol.WeaponSlotProto
-	54, // 11: protocol.HullmodDefProto.op_cost_by_size:type_name -> protocol.HullmodDefProto.OpCostBySizeEntry
+	57, // 11: protocol.HullmodDefProto.op_cost_by_size:type_name -> protocol.HullmodDefProto.OpCostBySizeEntry
 	29, // 12: protocol.HangarData.hulls:type_name -> protocol.HullDefProto
 	30, // 13: protocol.HangarData.weapons:type_name -> protocol.WeaponDefProto
 	31, // 14: protocol.HangarData.hullmods:type_name -> protocol.HullmodDefProto
-	55, // 15: protocol.FitShipRequest.fitted_weapons:type_name -> protocol.FitShipRequest.FittedWeaponsEntry
+	58, // 15: protocol.FitShipRequest.fitted_weapons:type_name -> protocol.FitShipRequest.FittedWeaponsEntry
 	19, // 16: protocol.PlayerMigrationPayload.cargo_items:type_name -> protocol.ItemInstanceProto
 	23, // 17: protocol.PlayerMigrationPayload.fleet_ships:type_name -> protocol.FleetShipProto
 	50, // 18: protocol.PlayerMigrationPayload.skills:type_name -> protocol.SkillProto
 	34, // 19: protocol.SystemTransferRequest.payload:type_name -> protocol.PlayerMigrationPayload
 	19, // 20: protocol.VaultStatus.personal_items:type_name -> protocol.ItemInstanceProto
 	19, // 21: protocol.VaultStatus.corporate_items:type_name -> protocol.ItemInstanceProto
-	56, // 22: protocol.RecipeProto.inputs:type_name -> protocol.RecipeProto.InputsEntry
-	57, // 23: protocol.RecipeProto.outputs:type_name -> protocol.RecipeProto.OutputsEntry
+	59, // 22: protocol.RecipeProto.inputs:type_name -> protocol.RecipeProto.InputsEntry
+	60, // 23: protocol.RecipeProto.outputs:type_name -> protocol.RecipeProto.OutputsEntry
 	48, // 24: protocol.ProductionStatus.queue:type_name -> protocol.CraftJobProto
 	47, // 25: protocol.ProductionStatus.recipes:type_name -> protocol.RecipeProto
 	50, // 26: protocol.PlayerProgressMsg.skills:type_name -> protocol.SkillProto
-	27, // [27:27] is the sub-list for method output_type
-	27, // [27:27] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	53, // 27: protocol.ResearchStatus.projects:type_name -> protocol.ResearchProjectProto
+	28, // [28:28] is the sub-list for method output_type
+	28, // [28:28] is the sub-list for method input_type
+	28, // [28:28] is the sub-list for extension type_name
+	28, // [28:28] is the sub-list for extension extendee
+	0,  // [0:28] is the sub-list for field type_name
 }
 
 func init() { file_pkg_protocol_messages_proto_init() }
@@ -4689,7 +4942,7 @@ func file_pkg_protocol_messages_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_protocol_messages_proto_rawDesc), len(file_pkg_protocol_messages_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   57,
+			NumMessages:   60,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -54,6 +54,10 @@ enum PacketType {
 
   // Phase 3 skills / progression
   S_PLAYER_PROGRESS = 34;
+
+  // Phase 3 research
+  C_START_RESEARCH = 35;
+  S_RESEARCH_STATUS = 36;
 }
 
 message Packet {
@@ -381,7 +385,8 @@ message PlayerMigrationPayload {
   string ai_behavior = 29;
   uint64 ai_target_id = 30;
   repeated FleetShipProto fleet_ships = 31;
-  repeated SkillProto skills = 32; // Phase 3: carry progression across jump gates
+  repeated SkillProto skills = 32;            // Phase 3: carry progression across jump gates
+  repeated string completed_research = 33;    // Phase 3: carry completed research across jump gates
 }
 
 message SystemTransferRequest {
@@ -458,6 +463,8 @@ message RecipeProto {
   map<string, int32> inputs = 4;
   map<string, int32> outputs = 5;
   float time_seconds = 6;
+  bool locked = 7;               // true if gated by research the player hasn't completed
+  string required_research = 8;  // research project ID gating this recipe ("" = none)
 }
 
 message CraftJobProto {
@@ -482,4 +489,25 @@ message SkillProto {
 
 message PlayerProgressMsg {
   repeated SkillProto skills = 1;
+}
+
+// Phase 3: research.
+message StartResearchRequest {
+  string project_id = 1;
+}
+
+message ResearchProjectProto {
+  string id = 1;
+  string name = 2;
+  int64 cost = 3;
+  float time_seconds = 4;
+  repeated string prereqs = 5;
+  repeated string unlocks = 6;
+  string status = 7;     // locked | available | active | completed
+  float progress = 8;    // for the active project
+  float total_time = 9;  // for the active project
+}
+
+message ResearchStatus {
+  repeated ResearchProjectProto projects = 1;
 }

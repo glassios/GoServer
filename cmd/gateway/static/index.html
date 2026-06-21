@@ -561,6 +561,14 @@
         </div>
 
         <div>
+            <h3 style="font-size: 0.8rem; margin-bottom: 6px; color: var(--accent-cyan); display:flex; justify-content:space-between; align-items:center;">
+                <span>Исследования</span>
+                <button class="btn btn-action btn-secondary" style="margin-top:0; padding:2px 8px; font-size:0.65rem;" onclick="toggleResearch()">Показать</button>
+            </h3>
+            <div id="research-panel" style="display:none; flex-direction:column; gap:6px; font-size:0.7rem; max-height:260px; overflow-y:auto;"></div>
+        </div>
+
+        <div>
             <h3 style="font-size: 0.8rem; margin-bottom: 6px; color: var(--accent-cyan);">Навыки</h3>
             <div id="skills-panel" style="display:flex; flex-direction:column; gap:5px; font-size:0.7rem;">
                 <div style="color:var(--text-muted)">—</div>
@@ -829,6 +837,8 @@
     let productionStamp = 0;    // wall-clock (ms) when the last status arrived, for local progress interpolation
     let playerSkills = null;    // { skills:[{key,level,xp,xp_next}] } from S_PLAYER_PROGRESS
     let skillLevels = {};       // key -> last seen level, for level-up toasts
+    let researchState = null;   // { projects:[...] } from S_RESEARCH_STATUS
+    let researchDone = {};      // id -> true last seen completed, for completion toasts
     let particles = [];
     let damageNumbers = [];
 
@@ -1061,6 +1071,9 @@
         } else if (msg.type === 's_player_progress' || msg.type === 'playerprogressmsg') {
             playerSkills = msg.data || { skills: [] };
             renderSkillsPanel();
+        } else if (msg.type === 's_research_status' || msg.type === 'researchstatus') {
+            researchState = msg.data || { projects: [] };
+            renderResearchPanel();
         } else if (msg.type === 'chatmessage' || msg.type === 's_chat_message') {
             const sender = msg.data.sender || 'System';
             if (sender === 'System') {
@@ -1699,12 +1712,16 @@
             if (!inTier.length) return;
             recipeHtml += `<div style="color:var(--accent-cyan); margin-top:3px;">${tierName[tier] || ('T' + tier)}</div>`;
             inTier.forEach(r => {
+                const action = r.locked
+                    ? `<span title="Требуется исследование: ${r.required_research}" style="color:var(--accent-red,#e44); font-size:0.7rem;">🔒</span>`
+                    : `<button class="btn btn-action" style="margin:0; padding:2px 8px; font-size:0.62rem;" onclick="craftRecipe('${r.id}')">+</button>`;
+                const nameStyle = r.locked ? 'color:var(--text-muted)' : '';
                 recipeHtml += `<div style="display:flex; justify-content:space-between; align-items:center; gap:4px; border:1px solid rgba(255,255,255,0.08); border-radius:5px; padding:3px 5px;">
-                    <div style="flex:1;">
+                    <div style="flex:1; ${nameStyle}">
                         <div>${r.name} <span style="color:var(--text-muted)">(${r.time_seconds}с)</span></div>
                         <div style="color:var(--text-muted); font-size:0.6rem;">${ioSummary(r.inputs)} → ${ioSummary(r.outputs)}</div>
                     </div>
-                    <button class="btn btn-action" style="margin:0; padding:2px 8px; font-size:0.62rem;" onclick="craftRecipe('${r.id}')">+</button>
+                    ${action}
                 </div>`;
             });
         });
@@ -1755,6 +1772,71 @@
         const panel = document.getElementById('production-panel');
         if (panel && panel.style.display !== 'none' && productionState && (productionState.queue || []).length) {
             renderProductionPanel();
+        }
+    }, 333);
+
+    // ---- Phase 3: Research ----
+    function toggleResearch() {
+        const panel = document.getElementById('research-panel');
+        if (!panel) return;
+        panel.style.display = (panel.style.display === 'none') ? 'flex' : 'none';
+        renderResearchPanel();
+    }
+
+    const RESEARCH_STATUS_LABEL = {
+        completed: '<span style="color:var(--accent-green,#4caf50)">изучено</span>',
+        active: '<span style="color:var(--accent-cyan)">идёт</span>',
+        available: '<span style="color:var(--text-muted)">доступно</span>',
+        locked: '<span style="color:var(--accent-red,#e44)">🔒 требования</span>'
+    };
+
+    function renderResearchPanel() {
+        const panel = document.getElementById('research-panel');
+        if (!panel || panel.style.display === 'none') return;
+        const projects = (researchState && researchState.projects) ? researchState.projects : [];
+        if (!projects.length) {
+            panel.innerHTML = '<div style="color:var(--text-muted)">Нет проектов</div>';
+            return;
+        }
+        let html = '';
+        projects.forEach(p => {
+            // Completion toast.
+            const wasDone = researchDone[p.id];
+            if (p.status === 'completed' && !wasDone) {
+                logEvent(`Исследование завершено: ${p.name}`, 'trade');
+            }
+            researchDone[p.id] = (p.status === 'completed');
+
+            let body = '';
+            if (p.status === 'active') {
+                const pct = p.total_time > 0 ? Math.min(100, (p.progress / p.total_time) * 100) : 0;
+                body = `<div style="height:6px; background:#10101e; border-radius:4px; overflow:hidden;"><div style="height:100%; width:${pct}%; background:var(--accent-cyan);"></div></div>`;
+            } else if (p.status === 'available') {
+                body = `<button class="btn btn-action" style="margin:2px 0 0; padding:2px 8px; font-size:0.62rem;" onclick="startResearch('${p.id}')">Исследовать (${p.cost} кр., ${p.time_seconds}с)</button>`;
+            }
+            const unlocks = (p.unlocks && p.unlocks.length) ? `<div style="color:var(--text-muted); font-size:0.6rem;">Открывает: ${p.unlocks.join(', ')}</div>` : '';
+            html += `<div style="border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:5px; display:flex; flex-direction:column; gap:3px;">
+                <div style="display:flex; justify-content:space-between;"><span>${p.name}</span>${RESEARCH_STATUS_LABEL[p.status] || p.status}</div>
+                ${unlocks}
+                ${body}
+            </div>`;
+        });
+        panel.innerHTML = html;
+    }
+
+    function startResearch(projectId) {
+        if (!(socket && socket.readyState === WebSocket.OPEN)) return;
+        socket.send(JSON.stringify({ action: 'start_research', project_id: projectId }));
+    }
+
+    // Animate the active research bar between server pushes.
+    setInterval(() => {
+        const panel = document.getElementById('research-panel');
+        if (!panel || panel.style.display === 'none' || !researchState) return;
+        const active = (researchState.projects || []).find(p => p.status === 'active');
+        if (active) {
+            active.progress = Math.min(active.total_time, active.progress + 0.333);
+            renderResearchPanel();
         }
     }, 333);
 

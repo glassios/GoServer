@@ -172,6 +172,27 @@ func (r *PostgresPlayerRepository) Save(ctx context.Context, player *domain.Play
 		}
 	}
 
+	// Save completed research (Phase 3) if present.
+	if comps.Research != nil {
+		if _, err = tx.ExecContext(ctx, "DELETE FROM player_research WHERE account_id = $1", player.AccountID); err != nil {
+			return fmt.Errorf("failed to delete old player research: %w", err)
+		}
+		resStmt, err := tx.PrepareContext(ctx, `
+			INSERT INTO player_research (account_id, project_id) VALUES ($1, $2)`)
+		if err != nil {
+			return fmt.Errorf("failed to prepare research insert: %w", err)
+		}
+		defer resStmt.Close()
+		for projID, done := range comps.Research.Completed {
+			if !done {
+				continue
+			}
+			if _, err = resStmt.ExecContext(ctx, player.AccountID, projID); err != nil {
+				return fmt.Errorf("failed to insert player research: %w", err)
+			}
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit save transaction: %w", err)
 	}
@@ -348,6 +369,20 @@ func (r *PostgresPlayerRepository) Load(ctx context.Context, accountID uint64) (
 		}
 	}
 	comps.Progress = progress
+
+	// Load completed research (Phase 3).
+	research := domain.NewPlayerResearch()
+	resRows, resErr := r.db.QueryContext(ctx, "SELECT project_id FROM player_research WHERE account_id = $1", accountID)
+	if resErr == nil {
+		defer resRows.Close()
+		for resRows.Next() {
+			var projID string
+			if err := resRows.Scan(&projID); err == nil {
+				research.Completed[projID] = true
+			}
+		}
+	}
+	comps.Research = research
 
 	return playerData, comps, nil
 }

@@ -9,12 +9,13 @@ package domain
 // "IronPlates", "Microchips", "Laser Cannon"), so applying a recipe is a direct cargo edit.
 
 type Recipe struct {
-	ID          string           `json:"id"`
-	Name        string           `json:"name"`
-	Tier        int32            `json:"tier"` // 1 refine, 2 components, 3 assembly (display grouping)
-	Inputs      map[string]int32 `json:"inputs"`
-	Outputs     map[string]int32 `json:"outputs"`
-	TimeSeconds float32          `json:"time_seconds"`
+	ID               string           `json:"id"`
+	Name             string           `json:"name"`
+	Tier             int32            `json:"tier"` // 1 refine, 2 components, 3 assembly (display grouping)
+	Inputs           map[string]int32 `json:"inputs"`
+	Outputs          map[string]int32 `json:"outputs"`
+	TimeSeconds      float32          `json:"time_seconds"`
+	RequiredResearch string           `json:"required_research"` // "" = always available; else a research project ID
 }
 
 // StockRecipes mirrors the legacy refinery chain (refinery.go) as data. Numbers and conversions
@@ -31,6 +32,10 @@ var StockRecipes = []Recipe{
 	// Tier 3 — assembly (components -> modules)
 	{ID: "assemble_laser", Name: "Laser Cannon", Tier: 3, Inputs: map[string]int32{"Microchips": 2, "EnergyCoils": 2}, Outputs: map[string]int32{"Laser Cannon": 1}, TimeSeconds: 8},
 	{ID: "assemble_mininglaser", Name: "Mining Laser", Tier: 3, Inputs: map[string]int32{"Microchips": 2, "IronPlates": 2}, Outputs: map[string]int32{"Mining Laser": 1}, TimeSeconds: 8},
+	// Tier 3 — research-gated advanced weapons (Phase 3 research unlocks).
+	{ID: "assemble_heavy_blaster", Name: "Heavy Blaster", Tier: 3, Inputs: map[string]int32{"Microchips": 3, "EnergyCoils": 3}, Outputs: map[string]int32{"Heavy Blaster": 1}, TimeSeconds: 10, RequiredResearch: "adv_weapons"},
+	{ID: "assemble_heavy_mauler", Name: "Heavy Mauler", Tier: 3, Inputs: map[string]int32{"Microchips": 3, "IronPlates": 3}, Outputs: map[string]int32{"Heavy Mauler": 1}, TimeSeconds: 10, RequiredResearch: "adv_weapons"},
+	{ID: "assemble_hellbore", Name: "Hellbore Cannon", Tier: 3, Inputs: map[string]int32{"Microchips": 5, "EnergyCoils": 5}, Outputs: map[string]int32{"Hellbore Cannon": 1}, TimeSeconds: 15, RequiredResearch: "capital_weapons"},
 }
 
 var recipeByID = map[string]*Recipe{}

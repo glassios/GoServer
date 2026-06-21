@@ -272,6 +272,16 @@ func SerializePlayer(world *ecs.World, id domain.EntityID) *protocol.PlayerMigra
 		}
 	}
 
+	// Carry completed research (Phase 3) across a cross-node jump.
+	if rVal, foundR := world.GetComponent(id, domain.PlayerResearch{}); foundR {
+		r := rVal.(*domain.PlayerResearch)
+		for projID, done := range r.Completed {
+			if done {
+				payload.CompletedResearch = append(payload.CompletedResearch, projID)
+			}
+		}
+	}
+
 	eType, hasEType := world.GetEntityType(id)
 	if hasEType && eType == domain.EntityNPC {
 		payload.IsNpc = true
@@ -420,6 +430,13 @@ func DeserializePlayer(world *ecs.World, payload *protocol.PlayerMigrationPayloa
 		progress.Skills[sk.Key] = &domain.SkillState{Level: lvl, XP: sk.Xp}
 	}
 	world.AddComponent(playerID, progress)
+
+	// Restore completed research (Phase 3); active in-progress research is not migrated.
+	research := domain.NewPlayerResearch()
+	for _, projID := range payload.CompletedResearch {
+		research.Completed[projID] = true
+	}
+	world.AddComponent(playerID, research)
 
 	return playerID
 }

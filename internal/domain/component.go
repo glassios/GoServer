@@ -258,6 +258,40 @@ type CraftQueue struct {
 	Jobs []CraftJob
 }
 
+// ActiveResearch is the project a player is currently researching (nil/empty ID when idle).
+type ActiveResearch struct {
+	ProjectID string
+	Progress  float32
+	TotalTime float32
+}
+
+// PlayerResearch tracks a player's completed research (which gates recipes) and the active project.
+type PlayerResearch struct {
+	Completed map[string]bool
+	Active    ActiveResearch
+}
+
+// NewPlayerResearch returns an empty research state.
+func NewPlayerResearch() *PlayerResearch {
+	return &PlayerResearch{Completed: map[string]bool{}}
+}
+
+// HasCompleted reports whether a project is done (nil-safe).
+func (r *PlayerResearch) HasCompleted(projectID string) bool {
+	if r == nil || r.Completed == nil {
+		return false
+	}
+	return r.Completed[projectID]
+}
+
+// RecipeUnlocked reports whether a recipe is available given the player's completed research.
+func (r *PlayerResearch) RecipeUnlocked(recipe *Recipe) bool {
+	if recipe.RequiredResearch == "" {
+		return true
+	}
+	return r.HasCompleted(recipe.RequiredResearch)
+}
+
 type Loot struct {
 	Credits int64
 }
