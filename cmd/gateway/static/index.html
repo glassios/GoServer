@@ -3350,7 +3350,7 @@
     // Draw space Station structure
     function drawSpaceBaseShape(ent) {
         const r = getEntityRadius(ent);
-        const col = getEntityColor(ent);
+        const col = getTeamColor(ent.factionId);
         ctx.shadowColor = col;
         ctx.shadowBlur = 10;
 
