@@ -228,7 +228,7 @@ func main() {
 						world.AddComponent(playerID, comps.Cargo)
 						world.AddComponent(playerID, comps.Weapon)
 						world.AddComponent(playerID, &domain.MiningLaser{Power: 5, Range: 300})
-						
+
 						// Если игрок был уничтожен (здоровье <= 0 или пустой флот), даем ему базовый флот и восстанавливаем здоровье
 						if comps.Health.Current <= 0 || comps.Fleet == nil || len(comps.Fleet.Ships) == 0 {
 							comps.Health.Current = comps.Health.Max
@@ -270,13 +270,13 @@ func main() {
 					world.AddComponent(playerID, &domain.Cargo{Items: []domain.ItemInstance{}, Capacity: 250})
 					world.AddComponent(playerID, &domain.Weapon{Type: domain.WeaponLaser, Damage: 10, Range: 500, Cooldown: 0.5})
 					world.AddComponent(playerID, &domain.MiningLaser{Power: 5, Range: 300})
-					
+
 					ships := []domain.FleetShip{
 						{ShipID: 1, ShipType: "fighter", Health: 100, MaxHealth: 100, Shield: 50, MaxShield: 50, CargoCapacity: 100},
 						{ShipID: 2, ShipType: "miner", Health: 80, MaxHealth: 80, Shield: 30, MaxShield: 30, CargoCapacity: 150},
 					}
 					world.AddComponent(playerID, &domain.Fleet{Ships: ships})
-					
+
 					grid.Insert(playerID, 0, 0)
 					logger.Info("Created fresh player entity", zap.Uint64("playerID", uint64(playerID)), zap.String("name", string(cmd.Payload)))
 				}
@@ -304,6 +304,59 @@ func main() {
 					sendFleetStatus(world, bus, playerID)
 					if playerRepo != nil {
 						savePlayerNow(world, playerRepo, playerID, logger)
+					}
+				}
+			}
+
+		case protocol.PacketType_C_GET_HANGAR:
+			sendHangarData(bus, playerID)
+			sendFleetStatus(world, bus, playerID)
+
+		case protocol.PacketType_C_FIT_SHIP:
+			var req protocol.FitShipRequest
+			if err := proto.Unmarshal(cmd.Payload, &req); err == nil {
+				if flVal, ok := world.GetComponent(playerID, domain.Fleet{}); ok {
+					fleet := flVal.(*domain.Fleet)
+					for i := range fleet.Ships {
+						if fleet.Ships[i].ShipID != req.ShipId {
+							continue
+						}
+						// Build the proposed loadout on top of the ship's hull and validate it
+						// server-side before applying.
+						hullID := fleet.Ships[i].HullID
+						if hullID == 0 {
+							if h := domain.HullByStringID(fleet.Ships[i].ShipType); h != nil {
+								hullID = h.ID
+							}
+						}
+						weapons := make(map[string]string, len(req.FittedWeapons))
+						for slot, wid := range req.FittedWeapons {
+							if wid != "" {
+								weapons[slot] = wid
+							}
+						}
+						cfg := &domain.ShipConfiguration{
+							HullID:         hullID,
+							FittedWeapons:  weapons,
+							FittedHullmods: req.FittedHullmods,
+							Vents:          req.Vents,
+							Capacitors:     req.Capacitors,
+						}
+						if verr := systems.ValidateLoadout(cfg); verr != nil {
+							sendSystemChat(bus, playerID, fmt.Sprintf("Оснастка отклонена: %s", verr.Error()))
+							break
+						}
+						fleet.Ships[i].Customized = true
+						fleet.Ships[i].HullID = hullID
+						fleet.Ships[i].FittedWeapons = weapons
+						fleet.Ships[i].FittedHullmods = append([]string{}, req.FittedHullmods...)
+						fleet.Ships[i].Vents = req.Vents
+						fleet.Ships[i].Capacitors = req.Capacitors
+						sendFleetStatus(world, bus, playerID)
+						if playerRepo != nil {
+							savePlayerNow(world, playerRepo, playerID, logger)
+						}
+						break
 					}
 				}
 			}
@@ -482,7 +535,7 @@ func main() {
 
 					if ironPlates >= costIronPlates && titaniumPlates >= costTitaniumPlates &&
 						microchips >= costMicrochips && moduleQty >= 1 {
-						
+
 						cargo.RemoveResourceTypeQuantity("IronPlates", costIronPlates)
 						cargo.RemoveResourceTypeQuantity("TitaniumPlates", costTitaniumPlates)
 						cargo.RemoveResourceTypeQuantity(domain.ResourceMicrochips, costMicrochips)
@@ -888,7 +941,7 @@ func loadWorldFromDB(ctx context.Context, world *ecs.World, grid *spatial.HashGr
 	for _, s := range snapshot.Stations {
 		world.RegisterEntityWithID(s.EntityID, domain.EntityStation)
 		world.AddComponent(s.EntityID, &domain.Transform{X: s.Transform.X, Y: s.Transform.Y})
-		
+
 		// Set default station properties
 		world.AddComponent(s.EntityID, &domain.StationMarket{
 			Items: map[domain.ResourceType]*domain.MarketItem{
@@ -1060,22 +1113,100 @@ func sendFleetStatus(world *ecs.World, bus messaging.MessageBus, playerID domain
 	}
 	fleet := flVal.(*domain.Fleet)
 	ships := make([]*protocol.FleetStatusShip, 0, len(fleet.Ships))
-	for i, s := range fleet.Ships {
+	for i := range fleet.Ships {
+		s := fleet.Ships[i]
 		role, strat := domain.ResolveTactics(s.Role, s.Strategy, i)
+		cfg := s.EffectiveConfig()
+		stats := domain.ComputeStats(cfg)
+		opUsed, opTotal := systems.ComputeOP(cfg)
 		ships = append(ships, &protocol.FleetStatusShip{
-			ShipId:    s.ShipID,
-			ShipType:  s.ShipType,
-			Health:    s.Health,
-			MaxHealth: s.MaxHealth,
-			Shield:    s.Shield,
-			MaxShield: s.MaxShield,
-			Role:      role,
-			Strategy:  strat,
+			ShipId:                 s.ShipID,
+			ShipType:               s.ShipType,
+			Health:                 s.Health,
+			MaxHealth:              s.MaxHealth,
+			Shield:                 s.Shield,
+			MaxShield:              s.MaxShield,
+			Role:                   role,
+			Strategy:               strat,
+			HullId:                 cfg.HullID,
+			FittedWeapons:          cfg.FittedWeapons,
+			FittedHullmods:         cfg.FittedHullmods,
+			Vents:                  cfg.Vents,
+			Capacitors:             cfg.Capacitors,
+			OpUsed:                 opUsed,
+			OpTotal:                opTotal,
+			PreviewHp:              stats.MaxHP,
+			PreviewArmor:           stats.MaxArmor,
+			PreviewShield:          stats.MaxShield,
+			PreviewMaxSpeed:        stats.MaxSpeed,
+			PreviewMaxFlux:         stats.MaxFlux,
+			PreviewFluxDissipation: stats.FluxDissipation,
 		})
 	}
 	status := &protocol.FleetStatus{Ships: ships}
 	payload, _ := proto.Marshal(status)
 	packet := &protocol.Packet{Type: protocol.PacketType_S_FLEET_STATUS, Payload: payload}
+	packetData, _ := proto.Marshal(packet)
+	_ = bus.Publish(fmt.Sprintf("player.%d.response", playerID), packetData)
+}
+
+// sendHangarData pushes the full fitting catalog (hulls/weapons/hullmods) to the client so the
+// Hangar/Refit screen can offer compatible parts. The catalog is static (code-defined), so this
+// is a straightforward projection of the domain Stock* tables.
+func sendHangarData(bus messaging.MessageBus, playerID domain.EntityID) {
+	hulls := make([]*protocol.HullDefProto, 0, len(domain.StockHulls))
+	for i := range domain.StockHulls {
+		h := &domain.StockHulls[i]
+		slots := make([]*protocol.WeaponSlotProto, 0, len(h.WeaponSlots))
+		for _, s := range h.WeaponSlots {
+			slots = append(slots, &protocol.WeaponSlotProto{
+				SlotId: s.SlotID, Size: s.Size, Type: s.Type, Mount: s.Mount,
+			})
+		}
+		hulls = append(hulls, &protocol.HullDefProto{
+			Id:             h.ID,
+			HullId:         h.HullID,
+			Name:           h.Name,
+			BaseHp:         h.BaseHP,
+			BaseArmor:      h.BaseArmor,
+			BaseShieldMax:  h.BaseShieldMax,
+			BaseMaxSpeed:   h.BaseMaxSpeed,
+			OrdnancePoints: h.OrdnancePoints,
+			SizeClass:      systems.HullSizeClass(h),
+			Slots:          slots,
+		})
+	}
+
+	weapons := make([]*protocol.WeaponDefProto, 0, len(domain.StockWeapons))
+	for i := range domain.StockWeapons {
+		w := &domain.StockWeapons[i]
+		weapons = append(weapons, &protocol.WeaponDefProto{
+			WeaponId:      w.WeaponID,
+			Name:          w.Name,
+			WeaponType:    w.WeaponType,
+			WeaponSize:    w.WeaponSize,
+			OpCost:        w.OPCost,
+			DamagePerShot: w.DamagePerShot,
+			DamageType:    w.DamageType,
+			FluxCost:      w.FluxCost,
+			Range:         w.Range,
+			Cooldown:      w.Cooldown,
+		})
+	}
+
+	hullmods := make([]*protocol.HullmodDefProto, 0, len(domain.StockHullmods))
+	for i := range domain.StockHullmods {
+		m := &domain.StockHullmods[i]
+		hullmods = append(hullmods, &protocol.HullmodDefProto{
+			ModId:        m.ModID,
+			Name:         m.Name,
+			OpCostBySize: m.OPCostBySize,
+		})
+	}
+
+	data := &protocol.HangarData{Hulls: hulls, Weapons: weapons, Hullmods: hullmods}
+	payload, _ := proto.Marshal(data)
+	packet := &protocol.Packet{Type: protocol.PacketType_S_HANGAR_DATA, Payload: payload}
 	packetData, _ := proto.Marshal(packet)
 	_ = bus.Publish(fmt.Sprintf("player.%d.response", playerID), packetData)
 }

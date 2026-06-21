@@ -3,14 +3,14 @@ package domain
 type ResourceType string
 
 const (
-	ResourceIron           ResourceType = "Iron"
-	ResourceTitanium       ResourceType = "Titanium"
-	ResourceCrystal        ResourceType = "Crystal"
-	ResourceRareGas        ResourceType = "RareGas"
-	ResourceSiliconWafers  ResourceType = "SiliconWafers"
-	ResourceFuelCells      ResourceType = "FuelCells"
-	ResourceMicrochips     ResourceType = "Microchips"
-	ResourceEnergyCoils    ResourceType = "EnergyCoils"
+	ResourceIron          ResourceType = "Iron"
+	ResourceTitanium      ResourceType = "Titanium"
+	ResourceCrystal       ResourceType = "Crystal"
+	ResourceRareGas       ResourceType = "RareGas"
+	ResourceSiliconWafers ResourceType = "SiliconWafers"
+	ResourceFuelCells     ResourceType = "FuelCells"
+	ResourceMicrochips    ResourceType = "Microchips"
+	ResourceEnergyCoils   ResourceType = "EnergyCoils"
 )
 
 type WeaponType string
@@ -74,7 +74,7 @@ type ArmorGrid struct {
 // CombatFx carries transient, per-tick combat outputs for the snapshot/visualizer:
 // how many weapon mounts fired this tick and the damage type of the most recent hit taken.
 type CombatFx struct {
-	ShotsFired    int32
+	ShotsFired     int32
 	LastDamageType string
 }
 
@@ -171,6 +171,46 @@ type FleetShip struct {
 	// Empty values fall back to sensible defaults at unpack time.
 	Role     string // "tank", "dps", "support", "repair"
 	Strategy string // "attack", "defense", "retreat"
+
+	// Phase 2 per-ship fitting (loadout). When Customized is false the ship uses the stock
+	// loadout for its hull type (DefaultLoadoutForShipType); when true the fields below define
+	// the player's refit. See EffectiveConfig.
+	Customized     bool
+	HullID         uint32            // numeric catalog hull id; 0 => derive from ShipType
+	FittedWeapons  map[string]string // slot_id -> weapon_id
+	FittedHullmods []string          // mod_id list
+	Vents          int32
+	Capacitors     int32
+}
+
+// EffectiveConfig resolves a ship's fitting into a ShipConfiguration ready for ComputeStats /
+// BakeShip. Uncustomized ships fall back to the stock loadout for their hull type, so battles and
+// the hangar always have a valid, fully-fitted configuration to work from.
+func (fs *FleetShip) EffectiveConfig() *ShipConfiguration {
+	if !fs.Customized {
+		return DefaultLoadoutForShipType(fs.ShipType)
+	}
+	hullID := fs.HullID
+	if hullID == 0 {
+		if h := HullByStringID(fs.ShipType); h != nil {
+			hullID = h.ID
+		}
+	}
+	weapons := make(map[string]string, len(fs.FittedWeapons))
+	for slot, wid := range fs.FittedWeapons {
+		if wid != "" {
+			weapons[slot] = wid
+		}
+	}
+	return &ShipConfiguration{
+		HullID:         hullID,
+		OwnerType:      "player",
+		CustomName:     fs.ShipType,
+		FittedWeapons:  weapons,
+		FittedHullmods: append([]string{}, fs.FittedHullmods...),
+		Vents:          fs.Vents,
+		Capacitors:     fs.Capacitors,
+	}
 }
 
 type Fleet struct {
@@ -376,4 +416,3 @@ type CombatMarker struct {
 type MinerAttacker struct {
 	IsCriminal bool
 }
-

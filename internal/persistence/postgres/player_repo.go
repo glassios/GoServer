@@ -3,10 +3,55 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 
 	"github.com/Home/galaxy-mmo/internal/domain"
 )
+
+// shipLoadout is the JSON shape persisted in fleet_ships.loadout for a customized ship.
+type shipLoadout struct {
+	HullID         uint32            `json:"hull_id"`
+	FittedWeapons  map[string]string `json:"weapons"`
+	FittedHullmods []string          `json:"hullmods"`
+	Vents          int32             `json:"vents"`
+	Capacitors     int32             `json:"capacitors"`
+}
+
+// encodeLoadout returns the JSON loadout for a ship, or "" if it is not customized.
+func encodeLoadout(s domain.FleetShip) string {
+	if !s.Customized {
+		return ""
+	}
+	b, err := json.Marshal(shipLoadout{
+		HullID:         s.HullID,
+		FittedWeapons:  s.FittedWeapons,
+		FittedHullmods: s.FittedHullmods,
+		Vents:          s.Vents,
+		Capacitors:     s.Capacitors,
+	})
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// applyLoadout decodes a persisted loadout JSON onto a FleetShip (no-op for "").
+func applyLoadout(s *domain.FleetShip, raw string) {
+	if raw == "" {
+		return
+	}
+	var l shipLoadout
+	if err := json.Unmarshal([]byte(raw), &l); err != nil {
+		return
+	}
+	s.Customized = true
+	s.HullID = l.HullID
+	s.FittedWeapons = l.FittedWeapons
+	s.FittedHullmods = l.FittedHullmods
+	s.Vents = l.Vents
+	s.Capacitors = l.Capacitors
+}
 
 type PostgresPlayerRepository struct {
 	db *sql.DB
@@ -89,15 +134,15 @@ func (r *PostgresPlayerRepository) Save(ctx context.Context, player *domain.Play
 		}
 
 		stmt, err := tx.PrepareContext(ctx, `
-			INSERT INTO fleet_ships (owner_id, owner_type, ship_type, health, max_health, shield, max_shield, cargo_capacity, role, strategy)
-			VALUES ($1, 'player', $2, $3, $4, $5, $6, $7, $8, $9)`)
+			INSERT INTO fleet_ships (owner_id, owner_type, ship_type, health, max_health, shield, max_shield, cargo_capacity, role, strategy, loadout)
+			VALUES ($1, 'player', $2, $3, $4, $5, $6, $7, $8, $9, $10)`)
 		if err != nil {
 			return fmt.Errorf("failed to prepare fleet insert: %w", err)
 		}
 		defer stmt.Close()
 
 		for _, s := range comps.Fleet.Ships {
-			_, err = stmt.ExecContext(ctx, player.AccountID, s.ShipType, s.Health, s.MaxHealth, s.Shield, s.MaxShield, s.CargoCapacity, s.Role, s.Strategy)
+			_, err = stmt.ExecContext(ctx, player.AccountID, s.ShipType, s.Health, s.MaxHealth, s.Shield, s.MaxShield, s.CargoCapacity, s.Role, s.Strategy, encodeLoadout(s))
 			if err != nil {
 				return fmt.Errorf("failed to insert fleet ship: %w", err)
 			}
@@ -163,7 +208,7 @@ func (r *PostgresPlayerRepository) Load(ctx context.Context, accountID uint64) (
 
 	// Query fleet ships
 	shipsQuery := `
-		SELECT ship_type, health, max_health, shield, max_shield, cargo_capacity, role, strategy
+		SELECT ship_type, health, max_health, shield, max_shield, cargo_capacity, role, strategy, loadout
 		FROM fleet_ships
 		WHERE owner_id = $1 AND owner_type = 'player'
 		ORDER BY id ASC;
@@ -174,10 +219,10 @@ func (r *PostgresPlayerRepository) Load(ctx context.Context, accountID uint64) (
 		defer rows.Close()
 		var sID uint32 = 1
 		for rows.Next() {
-			var sType, role, strategy string
+			var sType, role, strategy, loadout string
 			var hp, maxHp, sh, maxSh, capVal int32
-			if err := rows.Scan(&sType, &hp, &maxHp, &sh, &maxSh, &capVal, &role, &strategy); err == nil {
-				ships = append(ships, domain.FleetShip{
+			if err := rows.Scan(&sType, &hp, &maxHp, &sh, &maxSh, &capVal, &role, &strategy, &loadout); err == nil {
+				ship := domain.FleetShip{
 					ShipID:        sID,
 					ShipType:      sType,
 					Health:        hp,
@@ -187,7 +232,9 @@ func (r *PostgresPlayerRepository) Load(ctx context.Context, accountID uint64) (
 					CargoCapacity: capVal,
 					Role:          role,
 					Strategy:      strategy,
-				})
+				}
+				applyLoadout(&ship, loadout)
+				ships = append(ships, ship)
 				sID++
 			}
 		}
@@ -217,45 +264,45 @@ func (r *PostgresPlayerRepository) Load(ctx context.Context, accountID uint64) (
 		totalCargoCapacity += s.CargoCapacity
 	}
 
-		flagshipType := "fighter"
-		if len(ships) > 0 {
-			flagshipType = ships[0].ShipType
-		}
+	flagshipType := "fighter"
+	if len(ships) > 0 {
+		flagshipType = ships[0].ShipType
+	}
 
-		comps := domain.PlayerComponents{
-			Transform: &domain.Transform{
-				X:        x,
-				Y:        y,
-				Rotation: rotation,
-			},
-			Velocity: &domain.Velocity{
-				X: 0,
-				Y: 0,
-			},
-			Health: &domain.Health{
-				Current: ships[0].Health,
-				Max:     ships[0].MaxHealth,
-			},
-			Shield: &domain.Shield{
-				Current:   ships[0].Shield,
-				Max:       ships[0].MaxShield,
-				RegenRate: 1.0,
-			},
-			Weapon: &domain.Weapon{
-				Type:     domain.WeaponLaser,
-				Damage:   10,
-				Range:    200,
-				Cooldown: 1.0,
-			},
-			Cargo: &domain.Cargo{
-				Items:    cargoItems,
-				Capacity: totalCargoCapacity,
-			},
-			ShipConfig: &domain.ShipConfig{
-				ShipType: flagshipType,
-				MaxSpeed: 80,
-				TurnRate: 2.0,
-			},
+	comps := domain.PlayerComponents{
+		Transform: &domain.Transform{
+			X:        x,
+			Y:        y,
+			Rotation: rotation,
+		},
+		Velocity: &domain.Velocity{
+			X: 0,
+			Y: 0,
+		},
+		Health: &domain.Health{
+			Current: ships[0].Health,
+			Max:     ships[0].MaxHealth,
+		},
+		Shield: &domain.Shield{
+			Current:   ships[0].Shield,
+			Max:       ships[0].MaxShield,
+			RegenRate: 1.0,
+		},
+		Weapon: &domain.Weapon{
+			Type:     domain.WeaponLaser,
+			Damage:   10,
+			Range:    200,
+			Cooldown: 1.0,
+		},
+		Cargo: &domain.Cargo{
+			Items:    cargoItems,
+			Capacity: totalCargoCapacity,
+		},
+		ShipConfig: &domain.ShipConfig{
+			ShipType: flagshipType,
+			MaxSpeed: 80,
+			TurnRate: 2.0,
+		},
 		Fleet: &domain.Fleet{
 			Ships: ships,
 		},

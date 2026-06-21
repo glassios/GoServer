@@ -544,6 +544,14 @@
             <div id="fleet-tactics-panel" style="display:none; flex-direction:column; gap:4px; font-size:0.7rem; max-height:220px; overflow-y:auto;"></div>
         </div>
 
+        <div>
+            <h3 style="font-size: 0.8rem; margin-bottom: 6px; color: var(--accent-cyan); display:flex; justify-content:space-between; align-items:center;">
+                <span>Ангар / Оснастка</span>
+                <button class="btn btn-action btn-secondary" style="margin-top:0; padding:2px 8px; font-size:0.65rem;" onclick="toggleHangar()">Открыть</button>
+            </h3>
+            <div id="hangar-panel" style="display:none; flex-direction:column; gap:6px; font-size:0.7rem; max-height:320px; overflow-y:auto;"></div>
+        </div>
+
         <div style="flex-grow: 1; display: flex; flex-direction: column;">
             <h3 style="font-size: 0.8rem; margin-bottom: 6px; color: var(--accent-cyan)">Server Event Log</h3>
             <div class="logs-box" id="event-logs">
@@ -800,7 +808,8 @@
     let currentSystemID = 1;
     let entities = new Map(); // EntityID -> EntityState
     let focusCounts = {};     // entityID -> number of attackers currently targeting it (focus-fire)
-    let fleetRoster = [];     // player's fleet ships with tactics (from S_FLEET_STATUS)
+    let fleetRoster = [];     // player's fleet ships with tactics + loadout (from S_FLEET_STATUS)
+    let hangarCatalog = null; // { hulls, weapons, hullmods } from S_HANGAR_DATA
     let particles = [];
     let damageNumbers = [];
 
@@ -1022,6 +1031,10 @@
         } else if (msg.type === 's_fleet_status' || msg.type === 'fleetstatus') {
             fleetRoster = (msg.data && msg.data.ships) ? msg.data.ships : [];
             renderFleetTacticsPanel();
+            renderHangarPanel();
+        } else if (msg.type === 's_hangar_data' || msg.type === 'hangardata') {
+            hangarCatalog = msg.data || null;
+            renderHangarPanel();
         } else if (msg.type === 'chatmessage' || msg.type === 's_chat_message') {
             const sender = msg.data.sender || 'System';
             if (sender === 'System') {
@@ -1447,6 +1460,169 @@
                 strategy: ship.strategy
             }));
         }
+    }
+
+    // ---- Phase 2: Hangar / Refit ----
+    const SIZE_RANK = { SMALL: 1, MEDIUM: 2, LARGE: 3 };
+
+    function toggleHangar() {
+        const panel = document.getElementById('hangar-panel');
+        if (!panel) return;
+        const opening = panel.style.display === 'none';
+        panel.style.display = opening ? 'flex' : 'none';
+        if (opening && socket && socket.readyState === WebSocket.OPEN) {
+            // Pull the catalog + current loadouts from the server.
+            socket.send(JSON.stringify({ action: 'get_hangar' }));
+        }
+        renderHangarPanel();
+    }
+
+    function hullById(id) {
+        if (!hangarCatalog || !hangarCatalog.hulls) return null;
+        return hangarCatalog.hulls.find(h => h.id === id) || null;
+    }
+    function weaponById(wid) {
+        if (!hangarCatalog || !hangarCatalog.weapons) return null;
+        return hangarCatalog.weapons.find(w => w.weapon_id === wid) || null;
+    }
+    function weaponFitsSlot(w, slot) {
+        if (slot.type !== 'UNIVERSAL' && w.weapon_type !== slot.type) return false;
+        return (SIZE_RANK[w.weapon_size] || 9) <= (SIZE_RANK[slot.size] || 0);
+    }
+
+    function renderHangarPanel() {
+        const panel = document.getElementById('hangar-panel');
+        if (!panel || panel.style.display === 'none') return;
+        if (!hangarCatalog) {
+            panel.innerHTML = '<div style="color:var(--text-muted)">Загрузка каталога...</div>';
+            return;
+        }
+        if (!fleetRoster.length) {
+            panel.innerHTML = '<div style="color:var(--text-muted)">Нет данных о флоте</div>';
+            return;
+        }
+        let html = '';
+        fleetRoster.forEach(s => {
+            const hull = hullById(s.hull_id);
+            if (!hull) return;
+            const fitted = s.fitted_weapons || {};
+            const mods = s.fitted_hullmods || [];
+
+            // Weapon slots
+            let slotsHtml = '';
+            (hull.slots || []).forEach(slot => {
+                const cur = fitted[slot.slot_id] || '';
+                const opts = ['<option value="">— пусто —</option>'];
+                (hangarCatalog.weapons || []).forEach(w => {
+                    if (weaponFitsSlot(w, slot)) {
+                        opts.push(`<option value="${w.weapon_id}" ${w.weapon_id === cur ? 'selected' : ''}>${w.name} (${w.op_cost}OP, ${Math.round(w.damage_per_shot)} ${w.damage_type.slice(0,4)})</option>`);
+                    }
+                });
+                slotsHtml += `<div style="display:flex; gap:4px; align-items:center;">
+                    <span style="width:74px; color:var(--text-muted)">${slot.slot_id} ${slot.size.slice(0,1)}/${slot.type.slice(0,3)}</span>
+                    <select class="hangar-weap-${s.ship_id}" data-slot="${slot.slot_id}" onchange="recalcHangarOP(${s.ship_id})" style="flex:1; background:#10101e; color:#fff; border:1px solid rgba(255,255,255,0.15); border-radius:4px; font-size:0.62rem; padding:2px;">${opts.join('')}</select>
+                </div>`;
+            });
+
+            // Hullmods
+            let modsHtml = '';
+            (hangarCatalog.hullmods || []).forEach(m => {
+                const op = (m.op_cost_by_size && m.op_cost_by_size[hull.size_class]) || 0;
+                const on = mods.indexOf(m.mod_id) >= 0;
+                modsHtml += `<label style="display:flex; gap:4px; align-items:center; cursor:pointer;">
+                    <input type="checkbox" class="hangar-mod-${s.ship_id}" data-mod="${m.mod_id}" ${on ? 'checked' : ''} onchange="recalcHangarOP(${s.ship_id})">
+                    <span>${m.name} <span style="color:var(--text-muted)">(${op}OP)</span></span>
+                </label>`;
+            });
+
+            html += `<div style="border:1px solid rgba(255,255,255,0.12); border-radius:6px; padding:6px; display:flex; flex-direction:column; gap:4px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span style="color:var(--accent-cyan); font-weight:bold;">${hull.name}</span>
+                    <span style="color:var(--text-muted)">${hull.size_class}</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:6px;">
+                    <span style="width:30px; color:var(--text-muted)">OP</span>
+                    <div style="flex:1; height:8px; background:#10101e; border-radius:4px; overflow:hidden;">
+                        <div id="hangar-op-bar-${s.ship_id}" style="height:100%; width:0%; background:var(--accent-cyan);"></div>
+                    </div>
+                    <span id="hangar-op-txt-${s.ship_id}" style="width:54px; text-align:right;">${s.op_used}/${s.op_total}</span>
+                </div>
+                ${slotsHtml}
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <label style="display:flex; gap:3px; align-items:center;">Vents
+                        <input type="number" min="0" id="hangar-vents-${s.ship_id}" value="${s.vents}" onchange="recalcHangarOP(${s.ship_id})" style="width:42px; background:#10101e; color:#fff; border:1px solid rgba(255,255,255,0.15); border-radius:4px; font-size:0.62rem; padding:2px;">
+                    </label>
+                    <label style="display:flex; gap:3px; align-items:center;">Caps
+                        <input type="number" min="0" id="hangar-caps-${s.ship_id}" value="${s.capacitors}" onchange="recalcHangarOP(${s.ship_id})" style="width:42px; background:#10101e; color:#fff; border:1px solid rgba(255,255,255,0.15); border-radius:4px; font-size:0.62rem; padding:2px;">
+                    </label>
+                </div>
+                <div style="display:flex; flex-wrap:wrap; gap:2px;">${modsHtml}</div>
+                <div style="color:var(--text-muted); font-size:0.62rem;">
+                    HP ${Math.round(s.preview_hp)} · Бр ${Math.round(s.preview_armor)} · Щит ${Math.round(s.preview_shield)} · Скор ${Math.round(s.preview_max_speed)} · Флакс ${Math.round(s.preview_max_flux)} (−${Math.round(s.preview_flux_dissipation)}/с)
+                </div>
+                <button class="btn btn-action" style="margin-top:2px; padding:3px; font-size:0.65rem;" onclick="fitShip(${s.ship_id})">Сохранить оснастку</button>
+            </div>`;
+        });
+        panel.innerHTML = html || '<div style="color:var(--text-muted)">Нет совместимых корпусов</div>';
+        fleetRoster.forEach(s => recalcHangarOP(s.ship_id));
+    }
+
+    // Gather the current DOM selections for a ship into a loadout object.
+    function gatherHangarLoadout(shipId) {
+        const weapons = {};
+        document.querySelectorAll('.hangar-weap-' + shipId).forEach(sel => {
+            weapons[sel.dataset.slot] = sel.value; // "" clears the slot
+        });
+        const mods = [];
+        document.querySelectorAll('.hangar-mod-' + shipId).forEach(cb => {
+            if (cb.checked) mods.push(cb.dataset.mod);
+        });
+        const vents = parseInt(document.getElementById('hangar-vents-' + shipId).value || '0', 10);
+        const caps = parseInt(document.getElementById('hangar-caps-' + shipId).value || '0', 10);
+        return { fitted_weapons: weapons, fitted_hullmods: mods, vents: vents, capacitors: caps };
+    }
+
+    // Live client-side OP recompute (server still validates authoritatively on save).
+    function recalcHangarOP(shipId) {
+        const ship = fleetRoster.find(s => s.ship_id === shipId);
+        if (!ship) return;
+        const hull = hullById(ship.hull_id);
+        if (!hull) return;
+        const lo = gatherHangarLoadout(shipId);
+        let used = 0;
+        Object.values(lo.fitted_weapons).forEach(wid => {
+            const w = weaponById(wid);
+            if (w) used += w.op_cost;
+        });
+        lo.fitted_hullmods.forEach(mid => {
+            const m = (hangarCatalog.hullmods || []).find(x => x.mod_id === mid);
+            if (m && m.op_cost_by_size) used += (m.op_cost_by_size[hull.size_class] || 0);
+        });
+        used += (lo.vents || 0) + (lo.capacitors || 0);
+        const total = ship.op_total || hull.ordnance_points;
+        const bar = document.getElementById('hangar-op-bar-' + shipId);
+        const txt = document.getElementById('hangar-op-txt-' + shipId);
+        if (bar) {
+            bar.style.width = Math.min(100, total ? (used / total) * 100 : 0) + '%';
+            bar.style.background = used > total ? 'var(--accent-red, #e44)' : 'var(--accent-cyan)';
+        }
+        if (txt) {
+            txt.textContent = used + '/' + total;
+            txt.style.color = used > total ? 'var(--accent-red, #e44)' : '';
+        }
+    }
+
+    function fitShip(shipId) {
+        if (!(socket && socket.readyState === WebSocket.OPEN)) return;
+        const lo = gatherHangarLoadout(shipId);
+        socket.send(JSON.stringify({
+            action: 'fit_ship',
+            ship_id: shipId,
+            fitted_weapons: lo.fitted_weapons,
+            fitted_hullmods: lo.fitted_hullmods,
+            vents: lo.vents,
+            capacitors: lo.capacitors
+        }));
     }
 
     // Switch systems tab

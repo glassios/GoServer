@@ -236,15 +236,21 @@ func SerializePlayer(world *ecs.World, id domain.EntityID) *protocol.PlayerMigra
 		payload.FleetShips = make([]*protocol.FleetShipProto, 0, len(fleet.Ships))
 		for _, ship := range fleet.Ships {
 			payload.FleetShips = append(payload.FleetShips, &protocol.FleetShipProto{
-				ShipId:        ship.ShipID,
-				ShipType:      ship.ShipType,
-				Health:        ship.Health,
-				MaxHealth:     ship.MaxHealth,
-				Shield:        ship.Shield,
-				MaxShield:     ship.MaxShield,
-				CargoCapacity: ship.CargoCapacity,
-				Role:          ship.Role,
-				Strategy:      ship.Strategy,
+				ShipId:         ship.ShipID,
+				ShipType:       ship.ShipType,
+				Health:         ship.Health,
+				MaxHealth:      ship.MaxHealth,
+				Shield:         ship.Shield,
+				MaxShield:      ship.MaxShield,
+				CargoCapacity:  ship.CargoCapacity,
+				Role:           ship.Role,
+				Strategy:       ship.Strategy,
+				Customized:     ship.Customized,
+				HullId:         ship.HullID,
+				FittedWeapons:  ship.FittedWeapons,
+				FittedHullmods: ship.FittedHullmods,
+				Vents:          ship.Vents,
+				Capacitors:     ship.Capacitors,
 			})
 		}
 	}
@@ -313,15 +319,21 @@ func DeserializePlayer(world *ecs.World, payload *protocol.PlayerMigrationPayloa
 		// Восстанавливаем точный состав флота с сохранением HP/SH каждого корабля.
 		for _, fs := range payload.FleetShips {
 			ships = append(ships, domain.FleetShip{
-				ShipID:        fs.ShipId,
-				ShipType:      fs.ShipType,
-				Health:        fs.Health,
-				MaxHealth:     fs.MaxHealth,
-				Shield:        fs.Shield,
-				MaxShield:     fs.MaxShield,
-				CargoCapacity: fs.CargoCapacity,
-				Role:          fs.Role,
-				Strategy:      fs.Strategy,
+				ShipID:         fs.ShipId,
+				ShipType:       fs.ShipType,
+				Health:         fs.Health,
+				MaxHealth:      fs.MaxHealth,
+				Shield:         fs.Shield,
+				MaxShield:      fs.MaxShield,
+				CargoCapacity:  fs.CargoCapacity,
+				Role:           fs.Role,
+				Strategy:       fs.Strategy,
+				Customized:     fs.Customized,
+				HullID:         fs.HullId,
+				FittedWeapons:  fs.FittedWeapons,
+				FittedHullmods: fs.FittedHullmods,
+				Vents:          fs.Vents,
+				Capacitors:     fs.Capacitors,
 			})
 		}
 	} else {

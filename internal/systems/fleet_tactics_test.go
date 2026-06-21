@@ -42,6 +42,47 @@ func TestJumpGate_MigrationPreservesTactics(t *testing.T) {
 	}
 }
 
+// Per-ship loadout (Phase 2) must survive a jump-gate migration.
+func TestJumpGate_MigrationPreservesLoadout(t *testing.T) {
+	src := ecs.NewWorld()
+	pid := domain.EntityID(889)
+	src.RegisterEntityWithID(pid, domain.EntityPlayer)
+	src.AddComponent(pid, &domain.Transform{X: 1, Y: 2})
+	src.AddComponent(pid, &domain.Health{Current: 100, Max: 100})
+	src.AddComponent(pid, &domain.Shield{Current: 50, Max: 50})
+	src.AddComponent(pid, &domain.PlayerData{Name: "Cmdr", Credits: 10})
+	src.AddComponent(pid, &domain.Fleet{Ships: []domain.FleetShip{
+		{
+			ShipID: 1, ShipType: "cruiser", Health: 800, MaxHealth: 800,
+			Customized:    true,
+			HullID:        8,
+			FittedWeapons: map[string]string{"WS1": domain.WeaponHellbore},
+			FittedHullmods: []string{domain.HullmodReinforcedBulkheads},
+			Vents:         3,
+			Capacitors:    7,
+		},
+	}})
+
+	payload := SerializePlayer(src, pid)
+	dst := ecs.NewWorld()
+	newID := DeserializePlayer(dst, payload)
+
+	flVal, ok := dst.GetComponent(newID, domain.Fleet{})
+	if !ok {
+		t.Fatal("expected Fleet after migration")
+	}
+	ship := flVal.(*domain.Fleet).Ships[0]
+	if !ship.Customized || ship.HullID != 8 || ship.Vents != 3 || ship.Capacitors != 7 {
+		t.Fatalf("loadout scalars not preserved: %+v", ship)
+	}
+	if ship.FittedWeapons["WS1"] != domain.WeaponHellbore {
+		t.Errorf("fitted weapon not preserved: %+v", ship.FittedWeapons)
+	}
+	if len(ship.FittedHullmods) != 1 || ship.FittedHullmods[0] != domain.HullmodReinforcedBulkheads {
+		t.Errorf("hullmods not preserved: %+v", ship.FittedHullmods)
+	}
+}
+
 // ResolveTactics applies explicit values and fills defaults for blanks.
 func TestResolveTactics_Defaults(t *testing.T) {
 	r, s := domain.ResolveTactics("", "", 1)

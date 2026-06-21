@@ -42,6 +42,11 @@ enum PacketType {
   // Phase 1.5 fleet tactics
   C_SET_FLEET_TACTICS = 27;
   S_FLEET_STATUS = 28;
+
+  // Phase 2 hangar / refit
+  C_GET_HANGAR = 29;
+  S_HANGAR_DATA = 30;
+  C_FIT_SHIP = 31;
 }
 
 message Packet {
@@ -232,6 +237,13 @@ message FleetShipProto {
   int32 cargo_capacity = 7;
   string role = 8;     // Phase 1.5 per-ship tactics
   string strategy = 9;
+  // Phase 2 per-ship loadout
+  bool customized = 10;
+  uint32 hull_id = 11;
+  map<string, string> fitted_weapons = 12; // slot_id -> weapon_id
+  repeated string fitted_hullmods = 13;
+  int32 vents = 14;
+  int32 capacitors = 15;
 }
 
 // Phase 1.5: player assigns role/strategy per ship before battle.
@@ -245,7 +257,7 @@ message SetFleetTactics {
   repeated FleetShipTactics ships = 1;
 }
 
-// Server pushes the player's fleet roster (with current tactics) to the client.
+// Server pushes the player's fleet roster (with current tactics + loadout) to the client.
 message FleetStatusShip {
   uint32 ship_id = 1;
   string ship_type = 2;
@@ -255,10 +267,79 @@ message FleetStatusShip {
   int32 max_shield = 6;
   string role = 7;
   string strategy = 8;
+  // Phase 2: effective loadout + baked preview so the hangar can render this ship.
+  uint32 hull_id = 9;
+  map<string, string> fitted_weapons = 10; // slot_id -> weapon_id
+  repeated string fitted_hullmods = 11;
+  int32 vents = 12;
+  int32 capacitors = 13;
+  int32 op_used = 14;
+  int32 op_total = 15;
+  float preview_hp = 16;
+  float preview_armor = 17;
+  float preview_shield = 18;
+  float preview_max_speed = 19;
+  float preview_max_flux = 20;
+  float preview_flux_dissipation = 21;
 }
 
 message FleetStatus {
   repeated FleetStatusShip ships = 1;
+}
+
+// Phase 2 hangar catalog (available hulls / weapons / hullmods).
+message WeaponSlotProto {
+  string slot_id = 1;
+  string size = 2;
+  string type = 3;
+  string mount = 4;
+}
+
+message HullDefProto {
+  uint32 id = 1;
+  string hull_id = 2;
+  string name = 3;
+  float base_hp = 4;
+  float base_armor = 5;
+  float base_shield_max = 6;
+  float base_max_speed = 7;
+  int32 ordnance_points = 8;
+  string size_class = 9;
+  repeated WeaponSlotProto slots = 10;
+}
+
+message WeaponDefProto {
+  string weapon_id = 1;
+  string name = 2;
+  string weapon_type = 3;
+  string weapon_size = 4;
+  int32 op_cost = 5;
+  float damage_per_shot = 6;
+  string damage_type = 7;
+  float flux_cost = 8;
+  float range = 9;
+  float cooldown = 10;
+}
+
+message HullmodDefProto {
+  string mod_id = 1;
+  string name = 2;
+  map<string, int32> op_cost_by_size = 3;
+}
+
+message HangarData {
+  repeated HullDefProto hulls = 1;
+  repeated WeaponDefProto weapons = 2;
+  repeated HullmodDefProto hullmods = 3;
+}
+
+// Client requests a refit of a single ship; server validates + applies + echoes S_FLEET_STATUS.
+message FitShipRequest {
+  uint32 ship_id = 1;
+  map<string, string> fitted_weapons = 2; // slot_id -> weapon_id ("" clears a slot)
+  repeated string fitted_hullmods = 3;
+  int32 vents = 4;
+  int32 capacitors = 5;
 }
 
 message PlayerMigrationPayload {

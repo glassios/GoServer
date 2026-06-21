@@ -109,21 +109,26 @@ type WSPlayer struct {
 }
 
 type WSMessage struct {
-	Action       string      `json:"action"`
-	Login        string      `json:"login"`
-	X            float32     `json:"x"`
-	Y            float32     `json:"y"`
-	Active       bool        `json:"active"`
-	RawTargetID  interface{} `json:"target_id"`
-	Resource     string      `json:"resource"`
-	Amount       int32       `json:"amount"`
-	ShipType     string      `json:"ship_type"`
-	VaultType    string      `json:"vault_type"`
-	ActionType   string      `json:"action_type"`
-	AlignWithFleetID uint64  `json:"align_with_fleet_id"`
-	ShipID       uint32      `json:"ship_id"`
-	Role         string      `json:"role"`
-	Strategy     string      `json:"strategy"`
+	Action           string      `json:"action"`
+	Login            string      `json:"login"`
+	X                float32     `json:"x"`
+	Y                float32     `json:"y"`
+	Active           bool        `json:"active"`
+	RawTargetID      interface{} `json:"target_id"`
+	Resource         string      `json:"resource"`
+	Amount           int32       `json:"amount"`
+	ShipType         string      `json:"ship_type"`
+	VaultType        string      `json:"vault_type"`
+	ActionType       string      `json:"action_type"`
+	AlignWithFleetID uint64      `json:"align_with_fleet_id"`
+	ShipID           uint32      `json:"ship_id"`
+	Role             string      `json:"role"`
+	Strategy         string      `json:"strategy"`
+	// Phase 2 hangar / refit
+	FittedWeapons  map[string]string `json:"fitted_weapons"`
+	FittedHullmods []string          `json:"fitted_hullmods"`
+	Vents          int32             `json:"vents"`
+	Capacitors     int32             `json:"capacitors"`
 }
 
 func (m *WSMessage) GetTargetID() uint64 {
@@ -527,6 +532,11 @@ func main() {
 				if proto.Unmarshal(packet.Payload, &fleetStatus) == nil {
 					payloadJSON, jsonErr = mOpts.Marshal(&fleetStatus)
 				}
+			case protocol.PacketType_S_HANGAR_DATA:
+				var hangar protocol.HangarData
+				if proto.Unmarshal(packet.Payload, &hangar) == nil {
+					payloadJSON, jsonErr = mOpts.Marshal(&hangar)
+				}
 			}
 
 			if len(payloadJSON) > 0 && jsonErr == nil {
@@ -723,6 +733,47 @@ func main() {
 						data, _ := proto.Marshal(serverCmd)
 						if pubErr := bus.Publish(fmt.Sprintf("system.%d.input", systemID), data); pubErr != nil {
 							logger.Error("Failed to publish WS set_fleet_tactics to NATS", zap.Error(pubErr))
+						}
+					}
+
+				case "get_hangar":
+					wsPlayersMu.RLock()
+					wp, exists := wsConns[conn]
+					wsPlayersMu.RUnlock()
+					if exists {
+						systemID := routingTable.Get(wp.playerID)
+						serverCmd := &protocol.ServerCommand{
+							PlayerId: uint64(wp.playerID),
+							Type:     protocol.PacketType_C_GET_HANGAR,
+						}
+						data, _ := proto.Marshal(serverCmd)
+						if pubErr := bus.Publish(fmt.Sprintf("system.%d.input", systemID), data); pubErr != nil {
+							logger.Error("Failed to publish WS get_hangar to NATS", zap.Error(pubErr))
+						}
+					}
+
+				case "fit_ship":
+					wsPlayersMu.RLock()
+					wp, exists := wsConns[conn]
+					wsPlayersMu.RUnlock()
+					if exists {
+						systemID := routingTable.Get(wp.playerID)
+						fitReq := &protocol.FitShipRequest{
+							ShipId:         msg.ShipID,
+							FittedWeapons:  msg.FittedWeapons,
+							FittedHullmods: msg.FittedHullmods,
+							Vents:          msg.Vents,
+							Capacitors:     msg.Capacitors,
+						}
+						payload, _ := proto.Marshal(fitReq)
+						serverCmd := &protocol.ServerCommand{
+							PlayerId: uint64(wp.playerID),
+							Type:     protocol.PacketType_C_FIT_SHIP,
+							Payload:  payload,
+						}
+						data, _ := proto.Marshal(serverCmd)
+						if pubErr := bus.Publish(fmt.Sprintf("system.%d.input", systemID), data); pubErr != nil {
+							logger.Error("Failed to publish WS fit_ship to NATS", zap.Error(pubErr))
 						}
 					}
 

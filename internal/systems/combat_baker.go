@@ -72,7 +72,7 @@ func UnpackFleet(sourceWorld, targetWorld *ecs.World, fleetEntityID domain.Entit
 		// Phase 1: bake combat stats from the fitting catalog (hull + weapons + flux + armor).
 		// Max stats come from the hull loadout; current HP/Shield carry over from the persisted
 		// FleetShip so battle damage persists across engagements.
-		cfg := domain.DefaultLoadoutForShipType(ship.ShipType)
+		cfg := ship.EffectiveConfig()
 		stats := domain.ComputeStats(cfg)
 
 		hp := ship.Health
