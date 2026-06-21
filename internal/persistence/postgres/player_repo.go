@@ -149,6 +149,29 @@ func (r *PostgresPlayerRepository) Save(ctx context.Context, player *domain.Play
 		}
 	}
 
+	// Save skill progression (Phase 3) if present.
+	if comps.Progress != nil {
+		if _, err = tx.ExecContext(ctx, "DELETE FROM player_skills WHERE account_id = $1", player.AccountID); err != nil {
+			return fmt.Errorf("failed to delete old player skills: %w", err)
+		}
+		skillStmt, err := tx.PrepareContext(ctx, `
+			INSERT INTO player_skills (account_id, skill, level, xp)
+			VALUES ($1, $2, $3, $4)`)
+		if err != nil {
+			return fmt.Errorf("failed to prepare skill insert: %w", err)
+		}
+		defer skillStmt.Close()
+		for _, k := range domain.SkillKeys {
+			st := comps.Progress.Skills[k]
+			if st == nil {
+				continue
+			}
+			if _, err = skillStmt.ExecContext(ctx, player.AccountID, k, st.Level, st.XP); err != nil {
+				return fmt.Errorf("failed to insert player skill: %w", err)
+			}
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit save transaction: %w", err)
 	}
@@ -307,6 +330,24 @@ func (r *PostgresPlayerRepository) Load(ctx context.Context, accountID uint64) (
 			Ships: ships,
 		},
 	}
+
+	// Load skill progression (Phase 3); default to fresh level-1 skills, then override from DB.
+	progress := domain.NewPlayerProgress()
+	skillRows, skErr := r.db.QueryContext(ctx, "SELECT skill, level, xp FROM player_skills WHERE account_id = $1", accountID)
+	if skErr == nil {
+		defer skillRows.Close()
+		for skillRows.Next() {
+			var key string
+			var level, xp int32
+			if err := skillRows.Scan(&key, &level, &xp); err == nil {
+				if level < 1 {
+					level = 1
+				}
+				progress.Skills[key] = &domain.SkillState{Level: level, XP: xp}
+			}
+		}
+	}
+	comps.Progress = progress
 
 	return playerData, comps, nil
 }

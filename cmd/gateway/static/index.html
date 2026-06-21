@@ -560,6 +560,13 @@
             <div id="production-panel" style="display:none; flex-direction:column; gap:6px; font-size:0.7rem; max-height:300px; overflow-y:auto;"></div>
         </div>
 
+        <div>
+            <h3 style="font-size: 0.8rem; margin-bottom: 6px; color: var(--accent-cyan);">Навыки</h3>
+            <div id="skills-panel" style="display:flex; flex-direction:column; gap:5px; font-size:0.7rem;">
+                <div style="color:var(--text-muted)">—</div>
+            </div>
+        </div>
+
         <div style="flex-grow: 1; display: flex; flex-direction: column;">
             <h3 style="font-size: 0.8rem; margin-bottom: 6px; color: var(--accent-cyan)">Server Event Log</h3>
             <div class="logs-box" id="event-logs">
@@ -820,6 +827,8 @@
     let hangarCatalog = null; // { hulls, weapons, hullmods } from S_HANGAR_DATA
     let productionState = null; // { queue, recipes } from S_PRODUCTION_STATUS
     let productionStamp = 0;    // wall-clock (ms) when the last status arrived, for local progress interpolation
+    let playerSkills = null;    // { skills:[{key,level,xp,xp_next}] } from S_PLAYER_PROGRESS
+    let skillLevels = {};       // key -> last seen level, for level-up toasts
     let particles = [];
     let damageNumbers = [];
 
@@ -1049,6 +1058,9 @@
             productionState = msg.data || { queue: [], recipes: [] };
             productionStamp = Date.now();
             renderProductionPanel();
+        } else if (msg.type === 's_player_progress' || msg.type === 'playerprogressmsg') {
+            playerSkills = msg.data || { skills: [] };
+            renderSkillsPanel();
         } else if (msg.type === 'chatmessage' || msg.type === 's_chat_message') {
             const sender = msg.data.sender || 'System';
             if (sender === 'System') {
@@ -1704,6 +1716,38 @@
     function craftRecipe(recipeId) {
         if (!(socket && socket.readyState === WebSocket.OPEN)) return;
         socket.send(JSON.stringify({ action: 'craft_recipe', recipe_id: recipeId }));
+    }
+
+    // ---- Phase 3: Skills / progression ----
+    const SKILL_LABELS = { mining: 'Добыча', engineering: 'Инженерия', combat: 'Бой' };
+
+    function renderSkillsPanel() {
+        const panel = document.getElementById('skills-panel');
+        if (!panel) return;
+        const skills = (playerSkills && playerSkills.skills) ? playerSkills.skills : [];
+        if (!skills.length) {
+            panel.innerHTML = '<div style="color:var(--text-muted)">—</div>';
+            return;
+        }
+        let html = '';
+        skills.forEach(s => {
+            // Level-up toast: compare against last-seen level.
+            const prev = skillLevels[s.key];
+            if (prev !== undefined && s.level > prev) {
+                logEvent(`Навык повышен: ${SKILL_LABELS[s.key] || s.key} ур. ${s.level}!`, 'trade');
+            }
+            skillLevels[s.key] = s.level;
+
+            const pct = s.xp_next > 0 ? Math.min(100, (s.xp / s.xp_next) * 100) : 0;
+            html += `<div style="display:flex; flex-direction:column; gap:2px;">
+                <div style="display:flex; justify-content:space-between;">
+                    <span>${SKILL_LABELS[s.key] || s.key} <span style="color:var(--accent-cyan)">ур. ${s.level}</span></span>
+                    <span style="color:var(--text-muted)">${s.xp}/${s.xp_next}</span>
+                </div>
+                <div style="height:6px; background:#10101e; border-radius:4px; overflow:hidden;"><div style="height:100%; width:${pct}%; background:var(--accent-green, #4caf50);"></div></div>
+            </div>`;
+        });
+        panel.innerHTML = html;
     }
 
     // Re-render the production queue ~3x/sec for smooth local progress between server pushes.

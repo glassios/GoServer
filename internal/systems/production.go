@@ -59,6 +59,11 @@ func (s *ProductionSystem) Update(world *ecs.World, dt float64) {
 				for res, qty := range r.Outputs {
 					cargo.AddResourceTypeQuantity(domain.ResourceType(res), qty)
 				}
+				// Award engineering XP (scaled by recipe tier) and push the new progress.
+				if pVal, hasP := world.GetComponent(id, domain.PlayerProgress{}); hasP {
+					pVal.(*domain.PlayerProgress).AddXP(domain.SkillEngineering, r.Tier*10)
+					PublishPlayerProgress(s.bus, world, id)
+				}
 			}
 			q.Jobs = q.Jobs[1:]
 			changed = true
@@ -146,11 +151,18 @@ func TryEnqueueCraft(world *ecs.World, playerID domain.EntityID, recipeID string
 		q = &domain.CraftQueue{}
 		world.AddComponent(playerID, q)
 	}
+
+	// Engineering skill speeds up crafting (Phase 3).
+	totalTime := recipe.TimeSeconds
+	if pVal, hasP := world.GetComponent(playerID, domain.PlayerProgress{}); hasP {
+		totalTime *= pVal.(*domain.PlayerProgress).CraftTimeMult()
+	}
+
 	q.Jobs = append(q.Jobs, domain.CraftJob{
 		RecipeID:  recipe.ID,
 		Name:      recipe.Name,
 		Progress:  0,
-		TotalTime: recipe.TimeSeconds,
+		TotalTime: totalTime,
 	})
 	return nil
 }

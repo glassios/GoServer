@@ -255,6 +255,23 @@ func SerializePlayer(world *ecs.World, id domain.EntityID) *protocol.PlayerMigra
 		}
 	}
 
+	// Carry skill progression (Phase 3) so leveling survives a cross-node jump.
+	if pgVal, foundPg := world.GetComponent(id, domain.PlayerProgress{}); foundPg {
+		pg := pgVal.(*domain.PlayerProgress)
+		for _, k := range domain.SkillKeys {
+			st := pg.Skills[k]
+			if st == nil {
+				continue
+			}
+			payload.Skills = append(payload.Skills, &protocol.SkillProto{
+				Key:    k,
+				Level:  st.Level,
+				Xp:     st.XP,
+				XpNext: domain.XPForNextLevel(st.Level),
+			})
+		}
+	}
+
 	eType, hasEType := world.GetEntityType(id)
 	if hasEType && eType == domain.EntityNPC {
 		payload.IsNpc = true
@@ -392,6 +409,17 @@ func DeserializePlayer(world *ecs.World, payload *protocol.PlayerMigrationPayloa
 		Power: payload.MiningPower,
 		Range: payload.MiningRange,
 	})
+
+	// Restore skill progression (Phase 3).
+	progress := domain.NewPlayerProgress()
+	for _, sk := range payload.Skills {
+		lvl := sk.Level
+		if lvl < 1 {
+			lvl = 1
+		}
+		progress.Skills[sk.Key] = &domain.SkillState{Level: lvl, XP: sk.Xp}
+	}
+	world.AddComponent(playerID, progress)
 
 	return playerID
 }

@@ -64,6 +64,8 @@ const (
 	// Phase 3 production / crafting
 	PacketType_C_CRAFT_RECIPE      PacketType = 32
 	PacketType_S_PRODUCTION_STATUS PacketType = 33
+	// Phase 3 skills / progression
+	PacketType_S_PLAYER_PROGRESS PacketType = 34
 )
 
 // Enum value maps for PacketType.
@@ -103,6 +105,7 @@ var (
 		31: "C_FIT_SHIP",
 		32: "C_CRAFT_RECIPE",
 		33: "S_PRODUCTION_STATUS",
+		34: "S_PLAYER_PROGRESS",
 	}
 	PacketType_value = map[string]int32{
 		"PACKET_UNKNOWN":         0,
@@ -139,6 +142,7 @@ var (
 		"C_FIT_SHIP":             31,
 		"C_CRAFT_RECIPE":         32,
 		"S_PRODUCTION_STATUS":    33,
+		"S_PLAYER_PROGRESS":      34,
 	}
 )
 
@@ -2872,6 +2876,7 @@ type PlayerMigrationPayload struct {
 	AiBehavior      string                 `protobuf:"bytes,29,opt,name=ai_behavior,json=aiBehavior,proto3" json:"ai_behavior,omitempty"`
 	AiTargetId      uint64                 `protobuf:"varint,30,opt,name=ai_target_id,json=aiTargetId,proto3" json:"ai_target_id,omitempty"`
 	FleetShips      []*FleetShipProto      `protobuf:"bytes,31,rep,name=fleet_ships,json=fleetShips,proto3" json:"fleet_ships,omitempty"`
+	Skills          []*SkillProto          `protobuf:"bytes,32,rep,name=skills,proto3" json:"skills,omitempty"` // Phase 3: carry progression across jump gates
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -3119,6 +3124,13 @@ func (x *PlayerMigrationPayload) GetAiTargetId() uint64 {
 func (x *PlayerMigrationPayload) GetFleetShips() []*FleetShipProto {
 	if x != nil {
 		return x.FleetShips
+	}
+	return nil
+}
+
+func (x *PlayerMigrationPayload) GetSkills() []*SkillProto {
+	if x != nil {
+		return x.Skills
 	}
 	return nil
 }
@@ -4000,6 +4012,119 @@ func (x *ProductionStatus) GetRecipes() []*RecipeProto {
 	return nil
 }
 
+// Phase 3: skills / progression.
+type SkillProto struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"` // mining | engineering | combat
+	Level         int32                  `protobuf:"varint,2,opt,name=level,proto3" json:"level,omitempty"`
+	Xp            int32                  `protobuf:"varint,3,opt,name=xp,proto3" json:"xp,omitempty"`                       // progress toward next level
+	XpNext        int32                  `protobuf:"varint,4,opt,name=xp_next,json=xpNext,proto3" json:"xp_next,omitempty"` // XP needed for the next level
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SkillProto) Reset() {
+	*x = SkillProto{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SkillProto) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SkillProto) ProtoMessage() {}
+
+func (x *SkillProto) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SkillProto.ProtoReflect.Descriptor instead.
+func (*SkillProto) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *SkillProto) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *SkillProto) GetLevel() int32 {
+	if x != nil {
+		return x.Level
+	}
+	return 0
+}
+
+func (x *SkillProto) GetXp() int32 {
+	if x != nil {
+		return x.Xp
+	}
+	return 0
+}
+
+func (x *SkillProto) GetXpNext() int32 {
+	if x != nil {
+		return x.XpNext
+	}
+	return 0
+}
+
+type PlayerProgressMsg struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Skills        []*SkillProto          `protobuf:"bytes,1,rep,name=skills,proto3" json:"skills,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlayerProgressMsg) Reset() {
+	*x = PlayerProgressMsg{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlayerProgressMsg) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlayerProgressMsg) ProtoMessage() {}
+
+func (x *PlayerProgressMsg) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlayerProgressMsg.ProtoReflect.Descriptor instead.
+func (*PlayerProgressMsg) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *PlayerProgressMsg) GetSkills() []*SkillProto {
+	if x != nil {
+		return x.Skills
+	}
+	return nil
+}
+
 var File_pkg_protocol_messages_proto protoreflect.FileDescriptor
 
 const file_pkg_protocol_messages_proto_rawDesc = "" +
@@ -4278,7 +4403,7 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"capacitors\x1a@\n" +
 	"\x12FittedWeaponsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xd8\a\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x86\b\n" +
 	"\x16PlayerMigrationPayload\x12\x1b\n" +
 	"\tplayer_id\x18\x01 \x01(\x04R\bplayerId\x12\f\n" +
 	"\x01x\x18\x02 \x01(\x02R\x01x\x12\f\n" +
@@ -4321,7 +4446,8 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"\fai_target_id\x18\x1e \x01(\x04R\n" +
 	"aiTargetId\x129\n" +
 	"\vfleet_ships\x18\x1f \x03(\v2\x18.protocol.FleetShipProtoR\n" +
-	"fleetShips\"\xcc\x01\n" +
+	"fleetShips\x12,\n" +
+	"\x06skills\x18  \x03(\v2\x14.protocol.SkillProtoR\x06skills\"\xcc\x01\n" +
 	"\x15SystemTransferRequest\x12\x1b\n" +
 	"\tplayer_id\x18\x01 \x01(\x04R\bplayerId\x12(\n" +
 	"\x10target_system_id\x18\x02 \x01(\rR\x0etargetSystemId\x12\x17\n" +
@@ -4392,7 +4518,15 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"total_time\x18\x04 \x01(\x02R\ttotalTime\"r\n" +
 	"\x10ProductionStatus\x12-\n" +
 	"\x05queue\x18\x01 \x03(\v2\x17.protocol.CraftJobProtoR\x05queue\x12/\n" +
-	"\arecipes\x18\x02 \x03(\v2\x15.protocol.RecipeProtoR\arecipes*\xd2\x05\n" +
+	"\arecipes\x18\x02 \x03(\v2\x15.protocol.RecipeProtoR\arecipes\"]\n" +
+	"\n" +
+	"SkillProto\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05level\x18\x02 \x01(\x05R\x05level\x12\x0e\n" +
+	"\x02xp\x18\x03 \x01(\x05R\x02xp\x12\x17\n" +
+	"\axp_next\x18\x04 \x01(\x05R\x06xpNext\"A\n" +
+	"\x11PlayerProgressMsg\x12,\n" +
+	"\x06skills\x18\x01 \x03(\v2\x14.protocol.SkillProtoR\x06skills*\xe9\x05\n" +
 	"\n" +
 	"PacketType\x12\x12\n" +
 	"\x0ePACKET_UNKNOWN\x10\x00\x12\x12\n" +
@@ -4432,7 +4566,8 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"\n" +
 	"C_FIT_SHIP\x10\x1f\x12\x12\n" +
 	"\x0eC_CRAFT_RECIPE\x10 \x12\x17\n" +
-	"\x13S_PRODUCTION_STATUS\x10!B2Z0github.com/Home/galaxy-mmo/pkg/protocol;protocolb\x06proto3"
+	"\x13S_PRODUCTION_STATUS\x10!\x12\x15\n" +
+	"\x11S_PLAYER_PROGRESS\x10\"B2Z0github.com/Home/galaxy-mmo/pkg/protocol;protocolb\x06proto3"
 
 var (
 	file_pkg_protocol_messages_proto_rawDescOnce sync.Once
@@ -4447,7 +4582,7 @@ func file_pkg_protocol_messages_proto_rawDescGZIP() []byte {
 }
 
 var file_pkg_protocol_messages_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_pkg_protocol_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 55)
+var file_pkg_protocol_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 57)
 var file_pkg_protocol_messages_proto_goTypes = []any{
 	(PacketType)(0),                // 0: protocol.PacketType
 	(*Packet)(nil),                 // 1: protocol.Packet
@@ -4499,12 +4634,14 @@ var file_pkg_protocol_messages_proto_goTypes = []any{
 	(*RecipeProto)(nil),            // 47: protocol.RecipeProto
 	(*CraftJobProto)(nil),          // 48: protocol.CraftJobProto
 	(*ProductionStatus)(nil),       // 49: protocol.ProductionStatus
-	nil,                            // 50: protocol.FleetShipProto.FittedWeaponsEntry
-	nil,                            // 51: protocol.FleetStatusShip.FittedWeaponsEntry
-	nil,                            // 52: protocol.HullmodDefProto.OpCostBySizeEntry
-	nil,                            // 53: protocol.FitShipRequest.FittedWeaponsEntry
-	nil,                            // 54: protocol.RecipeProto.InputsEntry
-	nil,                            // 55: protocol.RecipeProto.OutputsEntry
+	(*SkillProto)(nil),             // 50: protocol.SkillProto
+	(*PlayerProgressMsg)(nil),      // 51: protocol.PlayerProgressMsg
+	nil,                            // 52: protocol.FleetShipProto.FittedWeaponsEntry
+	nil,                            // 53: protocol.FleetStatusShip.FittedWeaponsEntry
+	nil,                            // 54: protocol.HullmodDefProto.OpCostBySizeEntry
+	nil,                            // 55: protocol.FitShipRequest.FittedWeaponsEntry
+	nil,                            // 56: protocol.RecipeProto.InputsEntry
+	nil,                            // 57: protocol.RecipeProto.OutputsEntry
 }
 var file_pkg_protocol_messages_proto_depIdxs = []int32{
 	0,  // 0: protocol.Packet.type:type_name -> protocol.PacketType
@@ -4513,30 +4650,32 @@ var file_pkg_protocol_messages_proto_depIdxs = []int32{
 	17, // 3: protocol.MarketData.items:type_name -> protocol.MarketItem
 	19, // 4: protocol.InventoryUpdate.cargo:type_name -> protocol.ItemInstanceProto
 	0,  // 5: protocol.ServerCommand.type:type_name -> protocol.PacketType
-	50, // 6: protocol.FleetShipProto.fitted_weapons:type_name -> protocol.FleetShipProto.FittedWeaponsEntry
+	52, // 6: protocol.FleetShipProto.fitted_weapons:type_name -> protocol.FleetShipProto.FittedWeaponsEntry
 	24, // 7: protocol.SetFleetTactics.ships:type_name -> protocol.FleetShipTactics
-	51, // 8: protocol.FleetStatusShip.fitted_weapons:type_name -> protocol.FleetStatusShip.FittedWeaponsEntry
+	53, // 8: protocol.FleetStatusShip.fitted_weapons:type_name -> protocol.FleetStatusShip.FittedWeaponsEntry
 	26, // 9: protocol.FleetStatus.ships:type_name -> protocol.FleetStatusShip
 	28, // 10: protocol.HullDefProto.slots:type_name -> protocol.WeaponSlotProto
-	52, // 11: protocol.HullmodDefProto.op_cost_by_size:type_name -> protocol.HullmodDefProto.OpCostBySizeEntry
+	54, // 11: protocol.HullmodDefProto.op_cost_by_size:type_name -> protocol.HullmodDefProto.OpCostBySizeEntry
 	29, // 12: protocol.HangarData.hulls:type_name -> protocol.HullDefProto
 	30, // 13: protocol.HangarData.weapons:type_name -> protocol.WeaponDefProto
 	31, // 14: protocol.HangarData.hullmods:type_name -> protocol.HullmodDefProto
-	53, // 15: protocol.FitShipRequest.fitted_weapons:type_name -> protocol.FitShipRequest.FittedWeaponsEntry
+	55, // 15: protocol.FitShipRequest.fitted_weapons:type_name -> protocol.FitShipRequest.FittedWeaponsEntry
 	19, // 16: protocol.PlayerMigrationPayload.cargo_items:type_name -> protocol.ItemInstanceProto
 	23, // 17: protocol.PlayerMigrationPayload.fleet_ships:type_name -> protocol.FleetShipProto
-	34, // 18: protocol.SystemTransferRequest.payload:type_name -> protocol.PlayerMigrationPayload
-	19, // 19: protocol.VaultStatus.personal_items:type_name -> protocol.ItemInstanceProto
-	19, // 20: protocol.VaultStatus.corporate_items:type_name -> protocol.ItemInstanceProto
-	54, // 21: protocol.RecipeProto.inputs:type_name -> protocol.RecipeProto.InputsEntry
-	55, // 22: protocol.RecipeProto.outputs:type_name -> protocol.RecipeProto.OutputsEntry
-	48, // 23: protocol.ProductionStatus.queue:type_name -> protocol.CraftJobProto
-	47, // 24: protocol.ProductionStatus.recipes:type_name -> protocol.RecipeProto
-	25, // [25:25] is the sub-list for method output_type
-	25, // [25:25] is the sub-list for method input_type
-	25, // [25:25] is the sub-list for extension type_name
-	25, // [25:25] is the sub-list for extension extendee
-	0,  // [0:25] is the sub-list for field type_name
+	50, // 18: protocol.PlayerMigrationPayload.skills:type_name -> protocol.SkillProto
+	34, // 19: protocol.SystemTransferRequest.payload:type_name -> protocol.PlayerMigrationPayload
+	19, // 20: protocol.VaultStatus.personal_items:type_name -> protocol.ItemInstanceProto
+	19, // 21: protocol.VaultStatus.corporate_items:type_name -> protocol.ItemInstanceProto
+	56, // 22: protocol.RecipeProto.inputs:type_name -> protocol.RecipeProto.InputsEntry
+	57, // 23: protocol.RecipeProto.outputs:type_name -> protocol.RecipeProto.OutputsEntry
+	48, // 24: protocol.ProductionStatus.queue:type_name -> protocol.CraftJobProto
+	47, // 25: protocol.ProductionStatus.recipes:type_name -> protocol.RecipeProto
+	50, // 26: protocol.PlayerProgressMsg.skills:type_name -> protocol.SkillProto
+	27, // [27:27] is the sub-list for method output_type
+	27, // [27:27] is the sub-list for method input_type
+	27, // [27:27] is the sub-list for extension type_name
+	27, // [27:27] is the sub-list for extension extendee
+	0,  // [0:27] is the sub-list for field type_name
 }
 
 func init() { file_pkg_protocol_messages_proto_init() }
@@ -4550,7 +4689,7 @@ func file_pkg_protocol_messages_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_protocol_messages_proto_rawDesc), len(file_pkg_protocol_messages_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   55,
+			NumMessages:   57,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

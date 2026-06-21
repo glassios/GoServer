@@ -14,6 +14,7 @@ type PlayerComponents struct {
 	Cargo      *Cargo
 	ShipConfig *ShipConfig
 	Fleet      *Fleet
+	Progress   *PlayerProgress
 }
 
 type AsteroidSnapshot struct {

@@ -51,6 +51,9 @@ enum PacketType {
   // Phase 3 production / crafting
   C_CRAFT_RECIPE = 32;
   S_PRODUCTION_STATUS = 33;
+
+  // Phase 3 skills / progression
+  S_PLAYER_PROGRESS = 34;
 }
 
 message Packet {
@@ -378,6 +381,7 @@ message PlayerMigrationPayload {
   string ai_behavior = 29;
   uint64 ai_target_id = 30;
   repeated FleetShipProto fleet_ships = 31;
+  repeated SkillProto skills = 32; // Phase 3: carry progression across jump gates
 }
 
 message SystemTransferRequest {
@@ -466,4 +470,16 @@ message CraftJobProto {
 message ProductionStatus {
   repeated CraftJobProto queue = 1;
   repeated RecipeProto recipes = 2; // the craftable catalog (for the picker)
+}
+
+// Phase 3: skills / progression.
+message SkillProto {
+  string key = 1;     // mining | engineering | combat
+  int32 level = 2;
+  int32 xp = 3;       // progress toward next level
+  int32 xp_next = 4;  // XP needed for the next level
+}
+
+message PlayerProgressMsg {
+  repeated SkillProto skills = 1;
 }

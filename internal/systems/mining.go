@@ -6,10 +6,12 @@ import (
 
 	"github.com/Home/galaxy-mmo/internal/domain"
 	"github.com/Home/galaxy-mmo/internal/ecs"
+	"github.com/Home/galaxy-mmo/internal/messaging"
 )
 
 type MiningSystem struct {
 	eventBus        domain.EventBus
+	progressBus     messaging.MessageBus // optional: pushes S_PLAYER_PROGRESS on XP gain
 	accumulatedTime float64
 }
 
@@ -17,6 +19,11 @@ func NewMiningSystem(eventBus domain.EventBus) *MiningSystem {
 	return &MiningSystem{
 		eventBus: eventBus,
 	}
+}
+
+// SetProgressBus wires the messaging bus used to push skill/XP updates to mining players.
+func (s *MiningSystem) SetProgressBus(bus messaging.MessageBus) {
+	s.progressBus = bus
 }
 
 func (s *MiningSystem) Name() string {
@@ -94,8 +101,19 @@ func (s *MiningSystem) Update(world *ecs.World, dt float64) {
 			continue
 		}
 
-		// Calculate mine amount
+		// Calculate mine amount. The mining skill scales yield (Phase 3).
+		var progress *domain.PlayerProgress
+		if pVal, hasP := world.GetComponent(minerID, domain.PlayerProgress{}); hasP {
+			progress = pVal.(*domain.PlayerProgress)
+		}
+
 		mineAmount := int32(laser.Power)
+		if progress != nil {
+			mineAmount = int32(float32(mineAmount) * progress.MiningYieldMult())
+		}
+		if mineAmount < int32(laser.Power) {
+			mineAmount = int32(laser.Power) // never below base
+		}
 		if mineAmount > asteroid.Amount {
 			mineAmount = asteroid.Amount
 		}
@@ -112,6 +130,12 @@ func (s *MiningSystem) Update(world *ecs.World, dt float64) {
 		asteroid.Amount -= mineAmount
 		cargo.AddResourceTypeQuantity(asteroid.Type, mineAmount)
 		laser.LastMine = s.accumulatedTime
+
+		// Award mining XP and push progress to the player.
+		if progress != nil {
+			progress.AddXP(domain.SkillMining, mineAmount)
+			PublishPlayerProgress(s.progressBus, world, minerID)
+		}
 
 		// Fire Event
 		if s.eventBus != nil {

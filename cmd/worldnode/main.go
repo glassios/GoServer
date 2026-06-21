@@ -145,6 +145,7 @@ func main() {
 	aiSys := systems.NewAISystem(500.0, 50, cfg.Grid.WorldWidth, cfg.Grid.WorldHeight) // Max 50 NPCs
 	combatSys := systems.NewCombatSystem(nil)
 	miningSys := systems.NewMiningSystem(nil)
+	miningSys.SetProgressBus(bus) // push skill/XP updates to mining players (Phase 3)
 	refinerySys := systems.NewRefinerySystem()
 	shipyardSys := systems.NewShipyardSystem()
 	productionSys := systems.NewProductionSystem(bus)
@@ -254,6 +255,11 @@ func main() {
 						if comps.Fleet != nil {
 							world.AddComponent(playerID, comps.Fleet)
 						}
+						if comps.Progress != nil {
+							world.AddComponent(playerID, comps.Progress)
+						} else {
+							world.AddComponent(playerID, domain.NewPlayerProgress())
+						}
 						grid.Insert(playerID, comps.Transform.X, comps.Transform.Y)
 						logger.Info("Loaded player profile from repository", zap.Uint64("playerID", uint64(playerID)), zap.String("name", pData.Name))
 						loaded = true
@@ -278,6 +284,7 @@ func main() {
 						{ShipID: 2, ShipType: "miner", Health: 80, MaxHealth: 80, Shield: 30, MaxShield: 30, CargoCapacity: 150},
 					}
 					world.AddComponent(playerID, &domain.Fleet{Ships: ships})
+					world.AddComponent(playerID, domain.NewPlayerProgress())
 
 					grid.Insert(playerID, 0, 0)
 					logger.Info("Created fresh player entity", zap.Uint64("playerID", uint64(playerID)), zap.String("name", string(cmd.Payload)))
@@ -287,6 +294,8 @@ func main() {
 			sendFleetStatus(world, bus, playerID)
 			// Push the crafting catalog + any in-flight queue so the production panel can populate.
 			sendProductionStatus(world, bus, playerID)
+			// Push skill/XP progression so the skills panel can populate.
+			systems.PublishPlayerProgress(bus, world, playerID)
 
 		case protocol.PacketType_C_SET_FLEET_TACTICS:
 			var req protocol.SetFleetTactics
@@ -1063,6 +1072,9 @@ func saveActivePlayers(world *ecs.World, repo domain.PlayerRepository, systemID 
 		if foundF {
 			comps.Fleet = fVal.(*domain.Fleet)
 		}
+		if pgVal, foundPg := world.GetComponent(id, domain.PlayerProgress{}); foundPg {
+			comps.Progress = pgVal.(*domain.PlayerProgress)
+		}
 
 		err := repo.Save(ctx, player, comps)
 		if err != nil {
@@ -1267,6 +1279,9 @@ func savePlayerNow(world *ecs.World, repo domain.PlayerRepository, playerID doma
 	}
 	if foundF {
 		comps.Fleet = fVal.(*domain.Fleet)
+	}
+	if pgVal, foundPg := world.GetComponent(playerID, domain.PlayerProgress{}); foundPg {
+		comps.Progress = pgVal.(*domain.PlayerProgress)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

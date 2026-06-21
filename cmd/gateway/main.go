@@ -544,6 +544,11 @@ func main() {
 				if proto.Unmarshal(packet.Payload, &prod) == nil {
 					payloadJSON, jsonErr = mOpts.Marshal(&prod)
 				}
+			case protocol.PacketType_S_PLAYER_PROGRESS:
+				var prog protocol.PlayerProgressMsg
+				if proto.Unmarshal(packet.Payload, &prog) == nil {
+					payloadJSON, jsonErr = mOpts.Marshal(&prog)
+				}
 			}
 
 			if len(payloadJSON) > 0 && jsonErr == nil {
