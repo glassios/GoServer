@@ -54,6 +54,31 @@ func TestBaseProduction_RespectsCapacity(t *testing.T) {
 	}
 }
 
+func TestPlanetProduction_CreditsOwner(t *testing.T) {
+	world := ecs.NewWorld()
+	owner := world.CreateEntity(domain.EntityPlayer)
+	world.AddComponent(owner, &domain.PlayerData{Credits: 100})
+
+	planet := world.CreateEntity(domain.EntityPlanet)
+	world.AddComponent(planet, &domain.Planet{OwnerID: uint64(owner), DevelopmentLevel: 2})
+
+	bp := NewBaseProductionSystem()
+	bp.Update(world, 5.0)
+
+	pVal, _ := world.GetComponent(owner, domain.PlayerData{})
+	if got := pVal.(*domain.PlayerData).Credits; got != 100+2*planetCreditsPerLevel {
+		t.Fatalf("expected %d credits, got %d", 100+2*planetCreditsPerLevel, got)
+	}
+}
+
+func TestPlanetProduction_UnclaimedNoIncome(t *testing.T) {
+	world := ecs.NewWorld()
+	planet := world.CreateEntity(domain.EntityPlanet)
+	world.AddComponent(planet, &domain.Planet{OwnerID: 0, DevelopmentLevel: 3}) // unclaimed
+	bp := NewBaseProductionSystem()
+	bp.Update(world, 5.0) // must not panic / no income
+}
+
 func TestBaseProduction_BelowInterval(t *testing.T) {
 	world := ecs.NewWorld()
 	owner := world.CreateEntity(domain.EntityPlayer)

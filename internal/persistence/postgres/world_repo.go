@@ -148,6 +148,42 @@ func (r *PostgresWorldRepository) LoadSpaceBases(ctx context.Context, systemID u
 	return out, nil
 }
 
+// PlanetDevelopment is the persisted mutable state of a seeded planet (Phase 5).
+type PlanetDevelopment struct {
+	PlanetID uint64
+	OwnerID  uint64
+	Level    int32
+}
+
+// SavePlanetDevelopment upserts one planet's ownership/level (Phase 5). Concrete method.
+func (r *PostgresWorldRepository) SavePlanetDevelopment(ctx context.Context, systemID uint32, pd PlanetDevelopment) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO planet_development (planet_id, system_id, owner_id, level)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (planet_id) DO UPDATE SET owner_id = EXCLUDED.owner_id, level = EXCLUDED.level`,
+		pd.PlanetID, systemID, pd.OwnerID, pd.Level)
+	return err
+}
+
+// LoadPlanetDevelopment returns persisted planet state for a system keyed by planet id (Phase 5).
+func (r *PostgresWorldRepository) LoadPlanetDevelopment(ctx context.Context, systemID uint32) (map[uint64]PlanetDevelopment, error) {
+	rows, err := r.db.QueryContext(ctx,
+		"SELECT planet_id, owner_id, level FROM planet_development WHERE system_id = $1", systemID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[uint64]PlanetDevelopment)
+	for rows.Next() {
+		var pd PlanetDevelopment
+		if err := rows.Scan(&pd.PlanetID, &pd.OwnerID, &pd.Level); err != nil {
+			return nil, err
+		}
+		out[pd.PlanetID] = pd
+	}
+	return out, nil
+}
+
 func (r *PostgresWorldRepository) LoadWorld(ctx context.Context, systemID uint32) (*domain.WorldSnapshot, error) {
 	// Load player vaults from item_instances
 	playerVaults := make(map[uint64]map[uint64][]domain.ItemInstance)

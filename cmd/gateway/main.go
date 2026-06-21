@@ -820,6 +820,20 @@ func main() {
 						}
 					}
 
+				case "develop_planet":
+					wsPlayersMu.RLock()
+					wp, exists := wsConns[conn]
+					wsPlayersMu.RUnlock()
+					if exists {
+						systemID := routingTable.Get(wp.playerID)
+						payload, _ := proto.Marshal(&protocol.DevelopPlanetRequest{PlanetId: msg.GetTargetID()})
+						serverCmd := &protocol.ServerCommand{PlayerId: uint64(wp.playerID), Type: protocol.PacketType_C_DEVELOP_PLANET, Payload: payload}
+						data, _ := proto.Marshal(serverCmd)
+						if pubErr := bus.Publish(fmt.Sprintf("system.%d.input", systemID), data); pubErr != nil {
+							logger.Error("Failed to publish WS develop_planet to NATS", zap.Error(pubErr))
+						}
+					}
+
 				case "upgrade_base":
 					wsPlayersMu.RLock()
 					wp, exists := wsConns[conn]

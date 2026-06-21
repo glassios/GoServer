@@ -215,6 +215,25 @@ func main() {
 		}
 	}
 
+	// Seed planets (Phase 5) with stable IDs, then apply any persisted ownership/development.
+	seedPlanets(world, grid, systemID)
+	if pgRepo, ok := worldRepo.(*postgres.PostgresWorldRepository); ok {
+		if devs, lerr := pgRepo.LoadPlanetDevelopment(context.Background(), systemID); lerr == nil {
+			for _, planetID := range world.Query(ecs.BuildMask(domain.Planet{})) {
+				if pd, has := devs[uint64(planetID)]; has {
+					if pVal, ok := world.GetComponent(planetID, domain.Planet{}); ok {
+						p := pVal.(*domain.Planet)
+						p.OwnerID = pd.OwnerID
+						p.DevelopmentLevel = pd.Level
+					}
+				}
+			}
+			logger.Info("Loaded planet development", zap.Int("count", len(devs)))
+		} else {
+			logger.Warn("Failed to load planet development", zap.Error(lerr))
+		}
+	}
+
 	// 7. Loop Setup
 	loop := gameloop.NewGameLoop(world, ecsSystems, cfg.Server.Tickrate, logger)
 
@@ -496,6 +515,48 @@ func main() {
 							persistSpaceBases(world, worldRepo, systemID, logger)
 							sendInventoryUpdate(world, bus, playerID)
 							sendSystemChat(bus, playerID, fmt.Sprintf("База улучшена до уровня %d", base.Level))
+						}
+					}
+				}
+			}
+
+		case protocol.PacketType_C_DEVELOP_PLANET:
+			var req protocol.DevelopPlanetRequest
+			if err := proto.Unmarshal(cmd.Payload, &req); err == nil {
+				pid := domain.EntityID(req.PlanetId)
+				planetVal, okP := world.GetComponent(pid, domain.Planet{})
+				cargoVal, okC := world.GetComponent(playerID, domain.Cargo{})
+				tPlayerVal, okTP := world.GetComponent(playerID, domain.Transform{})
+				tPlanetVal, okTPl := world.GetComponent(pid, domain.Transform{})
+				if okP && okC && okTP && okTPl {
+					planet := planetVal.(*domain.Planet)
+					cargo := cargoVal.(*domain.Cargo)
+					// Proximity check.
+					tp := tPlayerVal.(*domain.Transform)
+					tpl := tPlanetVal.(*domain.Transform)
+					dx, dy := tp.X-tpl.X, tp.Y-tpl.Y
+					if dx*dx+dy*dy > 300*300 {
+						sendSystemChat(bus, playerID, "Слишком далеко от планеты")
+					} else if planet.OwnerID != 0 && planet.OwnerID != uint64(playerID) {
+						sendSystemChat(bus, playerID, "Планета принадлежит другому игроку")
+					} else {
+						const costIron, costTitan = 15, 10
+						if cargo.GetResourceTypeQuantity("IronPlates") < costIron || cargo.GetResourceTypeQuantity("TitaniumPlates") < costTitan {
+							sendSystemChat(bus, playerID, "Недостаточно ресурсов (нужно 15 IronPlates + 10 TitaniumPlates)")
+						} else {
+							cargo.RemoveResourceTypeQuantity("IronPlates", costIron)
+							cargo.RemoveResourceTypeQuantity("TitaniumPlates", costTitan)
+							planet.OwnerID = uint64(playerID)
+							planet.DevelopmentLevel++
+							if pgRepo, ok := worldRepo.(*postgres.PostgresWorldRepository); ok {
+								ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+								_ = pgRepo.SavePlanetDevelopment(ctx, systemID, postgres.PlanetDevelopment{
+									PlanetID: uint64(pid), OwnerID: planet.OwnerID, Level: planet.DevelopmentLevel,
+								})
+								cancel()
+							}
+							sendInventoryUpdate(world, bus, playerID)
+							sendSystemChat(bus, playerID, fmt.Sprintf("Планета развита до уровня %d", planet.DevelopmentLevel))
 						}
 					}
 				}
@@ -1067,6 +1128,37 @@ func seedStaticWorld(world *ecs.World, grid *spatial.HashGrid, systemID uint32) 
 			TargetY:        1800,
 		})
 		grid.Insert(gate, -2000, -2000)
+	}
+}
+
+// planetID returns a stable entity ID for the n-th planet of a system, in a high range that won't
+// collide with dynamically-created entities (Phase 5).
+func planetID(systemID uint32, index int) domain.EntityID {
+	return domain.EntityID(800000 + uint64(systemID)*100 + uint64(index))
+}
+
+// seedPlanets creates the system's planets with stable IDs (so persisted development keys to them).
+// Idempotent within a boot; safe to call after either world-load path.
+func seedPlanets(world *ecs.World, grid *spatial.HashGrid, systemID uint32) {
+	type pl struct{ x, y float32 }
+	var planets []pl
+	switch systemID {
+	case 1:
+		planets = []pl{{x: -1200, y: 1400}, {x: 1600, y: -900}}
+	case 2:
+		planets = []pl{{x: 1300, y: 1200}}
+	default:
+		planets = []pl{{x: 0, y: 1500}}
+	}
+	for i, p := range planets {
+		id := planetID(systemID, i)
+		if _, exists := world.GetEntityType(id); exists {
+			continue
+		}
+		world.RegisterEntityWithID(id, domain.EntityPlanet)
+		world.AddComponent(id, &domain.Transform{X: p.x, Y: p.y})
+		world.AddComponent(id, &domain.Planet{OwnerID: 0, DevelopmentLevel: 0})
+		grid.Insert(id, p.x, p.y)
 	}
 }
 

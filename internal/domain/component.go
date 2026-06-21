@@ -251,6 +251,13 @@ type SpaceBase struct {
 	Level   int32
 }
 
+// Planet is a seeded world body (Phase 5) a player can claim and develop. DevelopmentLevel raises
+// passive credit income for the owner; OwnerID is 0 until claimed.
+type Planet struct {
+	OwnerID          uint64
+	DevelopmentLevel int32
+}
+
 // CraftJob is one queued crafting order on a player (Phase 3). Inputs are consumed at enqueue
 // time; outputs are delivered to the player's cargo when Progress reaches TotalTime.
 type CraftJob struct {

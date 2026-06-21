@@ -5,10 +5,10 @@ import (
 	"github.com/Home/galaxy-mmo/internal/ecs"
 )
 
-// BaseProductionSystem (Phase 5) makes space bases productive: every interval each base credits its
-// owner's cargo with refined materials scaled by the base level. Credit only lands if the owner is
-// present in this system and has free cargo space, so production is "collected" simply by owning a
-// base near where you operate.
+// BaseProductionSystem (Phase 5) makes structures productive every interval: space bases refine
+// IronPlates into their owner's cargo (scaled by base level), and developed planets pay their owner
+// passive credits (scaled by development level). Output lands only if the owner is present in this
+// system, so production is "collected" simply by operating where you own structures.
 type BaseProductionSystem struct {
 	interval float64
 	acc      float64
@@ -21,26 +21,25 @@ func NewBaseProductionSystem() *BaseProductionSystem {
 func (s *BaseProductionSystem) Name() string  { return "BaseProductionSystem" }
 func (s *BaseProductionSystem) Priority() int { return 84 }
 
-// baseProductionPerLevel is the IronPlates produced per base level per interval.
-const baseProductionPerLevel = 2
+// Per-level yields per interval.
+const (
+	baseProductionPerLevel = 2  // IronPlates per base level
+	planetCreditsPerLevel  = 25 // credits per planet development level
+)
 
 func (s *BaseProductionSystem) Update(world *ecs.World, dt float64) {
-	bases := world.Query(ecs.BuildMask(domain.SpaceBase{}))
-	if len(bases) == 0 {
-		return
-	}
 	s.acc += dt
 	if s.acc < s.interval {
 		return
 	}
 	s.acc = 0
 
-	for _, baseID := range bases {
+	// Space bases -> owner cargo (IronPlates).
+	for _, baseID := range world.Query(ecs.BuildMask(domain.SpaceBase{})) {
 		bVal, _ := world.GetComponent(baseID, domain.SpaceBase{})
 		base := bVal.(*domain.SpaceBase)
 
-		ownerID := domain.EntityID(base.OwnerID)
-		cargoVal, ok := world.GetComponent(ownerID, domain.Cargo{})
+		cargoVal, ok := world.GetComponent(domain.EntityID(base.OwnerID), domain.Cargo{})
 		if !ok {
 			continue // owner offline / in another system
 		}
@@ -60,6 +59,18 @@ func (s *BaseProductionSystem) Update(world *ecs.World, dt float64) {
 		}
 		if amount > 0 {
 			cargo.AddResourceTypeQuantity("IronPlates", amount)
+		}
+	}
+
+	// Planets -> owner credits.
+	for _, planetID := range world.Query(ecs.BuildMask(domain.Planet{})) {
+		pVal, _ := world.GetComponent(planetID, domain.Planet{})
+		planet := pVal.(*domain.Planet)
+		if planet.OwnerID == 0 || planet.DevelopmentLevel <= 0 {
+			continue
+		}
+		if ownerVal, ok := world.GetComponent(domain.EntityID(planet.OwnerID), domain.PlayerData{}); ok {
+			ownerVal.(*domain.PlayerData).Credits += int64(planet.DevelopmentLevel) * planetCreditsPerLevel
 		}
 	}
 }

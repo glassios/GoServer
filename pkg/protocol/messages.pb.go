@@ -72,6 +72,8 @@ const (
 	// Phase 5 space bases
 	PacketType_C_BUILD_BASE   PacketType = 37
 	PacketType_C_UPGRADE_BASE PacketType = 38
+	// Phase 5 planets
+	PacketType_C_DEVELOP_PLANET PacketType = 39
 )
 
 // Enum value maps for PacketType.
@@ -116,6 +118,7 @@ var (
 		36: "S_RESEARCH_STATUS",
 		37: "C_BUILD_BASE",
 		38: "C_UPGRADE_BASE",
+		39: "C_DEVELOP_PLANET",
 	}
 	PacketType_value = map[string]int32{
 		"PACKET_UNKNOWN":         0,
@@ -157,6 +160,7 @@ var (
 		"S_RESEARCH_STATUS":      36,
 		"C_BUILD_BASE":           37,
 		"C_UPGRADE_BASE":         38,
+		"C_DEVELOP_PLANET":       39,
 	}
 )
 
@@ -4466,6 +4470,50 @@ func (x *UpgradeBaseRequest) GetBaseId() uint64 {
 	return 0
 }
 
+type DevelopPlanetRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PlanetId      uint64                 `protobuf:"varint,1,opt,name=planet_id,json=planetId,proto3" json:"planet_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DevelopPlanetRequest) Reset() {
+	*x = DevelopPlanetRequest{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[56]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DevelopPlanetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DevelopPlanetRequest) ProtoMessage() {}
+
+func (x *DevelopPlanetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[56]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DevelopPlanetRequest.ProtoReflect.Descriptor instead.
+func (*DevelopPlanetRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{56}
+}
+
+func (x *DevelopPlanetRequest) GetPlanetId() uint64 {
+	if x != nil {
+		return x.PlanetId
+	}
+	return 0
+}
+
 var File_pkg_protocol_messages_proto protoreflect.FileDescriptor
 
 const file_pkg_protocol_messages_proto_rawDesc = "" +
@@ -4897,7 +4945,9 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"\bprojects\x18\x01 \x03(\v2\x1e.protocol.ResearchProjectProtoR\bprojects\"\x12\n" +
 	"\x10BuildBaseRequest\"-\n" +
 	"\x12UpgradeBaseRequest\x12\x17\n" +
-	"\abase_id\x18\x01 \x01(\x04R\x06baseId*\xbc\x06\n" +
+	"\abase_id\x18\x01 \x01(\x04R\x06baseId\"3\n" +
+	"\x14DevelopPlanetRequest\x12\x1b\n" +
+	"\tplanet_id\x18\x01 \x01(\x04R\bplanetId*\xd2\x06\n" +
 	"\n" +
 	"PacketType\x12\x12\n" +
 	"\x0ePACKET_UNKNOWN\x10\x00\x12\x12\n" +
@@ -4942,7 +4992,8 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"\x10C_START_RESEARCH\x10#\x12\x15\n" +
 	"\x11S_RESEARCH_STATUS\x10$\x12\x10\n" +
 	"\fC_BUILD_BASE\x10%\x12\x12\n" +
-	"\x0eC_UPGRADE_BASE\x10&B2Z0github.com/Home/galaxy-mmo/pkg/protocol;protocolb\x06proto3"
+	"\x0eC_UPGRADE_BASE\x10&\x12\x14\n" +
+	"\x10C_DEVELOP_PLANET\x10'B2Z0github.com/Home/galaxy-mmo/pkg/protocol;protocolb\x06proto3"
 
 var (
 	file_pkg_protocol_messages_proto_rawDescOnce sync.Once
@@ -4957,7 +5008,7 @@ func file_pkg_protocol_messages_proto_rawDescGZIP() []byte {
 }
 
 var file_pkg_protocol_messages_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_pkg_protocol_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 63)
+var file_pkg_protocol_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 64)
 var file_pkg_protocol_messages_proto_goTypes = []any{
 	(PacketType)(0),                // 0: protocol.PacketType
 	(*Packet)(nil),                 // 1: protocol.Packet
@@ -5016,13 +5067,14 @@ var file_pkg_protocol_messages_proto_goTypes = []any{
 	(*ResearchStatus)(nil),         // 54: protocol.ResearchStatus
 	(*BuildBaseRequest)(nil),       // 55: protocol.BuildBaseRequest
 	(*UpgradeBaseRequest)(nil),     // 56: protocol.UpgradeBaseRequest
-	nil,                            // 57: protocol.FleetShipProto.FittedWeaponsEntry
-	nil,                            // 58: protocol.FleetStatusShip.FittedWeaponsEntry
-	nil,                            // 59: protocol.HullmodDefProto.OpCostBySizeEntry
-	nil,                            // 60: protocol.HangarData.OwnedModulesEntry
-	nil,                            // 61: protocol.FitShipRequest.FittedWeaponsEntry
-	nil,                            // 62: protocol.RecipeProto.InputsEntry
-	nil,                            // 63: protocol.RecipeProto.OutputsEntry
+	(*DevelopPlanetRequest)(nil),   // 57: protocol.DevelopPlanetRequest
+	nil,                            // 58: protocol.FleetShipProto.FittedWeaponsEntry
+	nil,                            // 59: protocol.FleetStatusShip.FittedWeaponsEntry
+	nil,                            // 60: protocol.HullmodDefProto.OpCostBySizeEntry
+	nil,                            // 61: protocol.HangarData.OwnedModulesEntry
+	nil,                            // 62: protocol.FitShipRequest.FittedWeaponsEntry
+	nil,                            // 63: protocol.RecipeProto.InputsEntry
+	nil,                            // 64: protocol.RecipeProto.OutputsEntry
 }
 var file_pkg_protocol_messages_proto_depIdxs = []int32{
 	0,  // 0: protocol.Packet.type:type_name -> protocol.PacketType
@@ -5031,25 +5083,25 @@ var file_pkg_protocol_messages_proto_depIdxs = []int32{
 	17, // 3: protocol.MarketData.items:type_name -> protocol.MarketItem
 	19, // 4: protocol.InventoryUpdate.cargo:type_name -> protocol.ItemInstanceProto
 	0,  // 5: protocol.ServerCommand.type:type_name -> protocol.PacketType
-	57, // 6: protocol.FleetShipProto.fitted_weapons:type_name -> protocol.FleetShipProto.FittedWeaponsEntry
+	58, // 6: protocol.FleetShipProto.fitted_weapons:type_name -> protocol.FleetShipProto.FittedWeaponsEntry
 	24, // 7: protocol.SetFleetTactics.ships:type_name -> protocol.FleetShipTactics
-	58, // 8: protocol.FleetStatusShip.fitted_weapons:type_name -> protocol.FleetStatusShip.FittedWeaponsEntry
+	59, // 8: protocol.FleetStatusShip.fitted_weapons:type_name -> protocol.FleetStatusShip.FittedWeaponsEntry
 	26, // 9: protocol.FleetStatus.ships:type_name -> protocol.FleetStatusShip
 	28, // 10: protocol.HullDefProto.slots:type_name -> protocol.WeaponSlotProto
-	59, // 11: protocol.HullmodDefProto.op_cost_by_size:type_name -> protocol.HullmodDefProto.OpCostBySizeEntry
+	60, // 11: protocol.HullmodDefProto.op_cost_by_size:type_name -> protocol.HullmodDefProto.OpCostBySizeEntry
 	29, // 12: protocol.HangarData.hulls:type_name -> protocol.HullDefProto
 	30, // 13: protocol.HangarData.weapons:type_name -> protocol.WeaponDefProto
 	31, // 14: protocol.HangarData.hullmods:type_name -> protocol.HullmodDefProto
-	60, // 15: protocol.HangarData.owned_modules:type_name -> protocol.HangarData.OwnedModulesEntry
-	61, // 16: protocol.FitShipRequest.fitted_weapons:type_name -> protocol.FitShipRequest.FittedWeaponsEntry
+	61, // 15: protocol.HangarData.owned_modules:type_name -> protocol.HangarData.OwnedModulesEntry
+	62, // 16: protocol.FitShipRequest.fitted_weapons:type_name -> protocol.FitShipRequest.FittedWeaponsEntry
 	19, // 17: protocol.PlayerMigrationPayload.cargo_items:type_name -> protocol.ItemInstanceProto
 	23, // 18: protocol.PlayerMigrationPayload.fleet_ships:type_name -> protocol.FleetShipProto
 	50, // 19: protocol.PlayerMigrationPayload.skills:type_name -> protocol.SkillProto
 	34, // 20: protocol.SystemTransferRequest.payload:type_name -> protocol.PlayerMigrationPayload
 	19, // 21: protocol.VaultStatus.personal_items:type_name -> protocol.ItemInstanceProto
 	19, // 22: protocol.VaultStatus.corporate_items:type_name -> protocol.ItemInstanceProto
-	62, // 23: protocol.RecipeProto.inputs:type_name -> protocol.RecipeProto.InputsEntry
-	63, // 24: protocol.RecipeProto.outputs:type_name -> protocol.RecipeProto.OutputsEntry
+	63, // 23: protocol.RecipeProto.inputs:type_name -> protocol.RecipeProto.InputsEntry
+	64, // 24: protocol.RecipeProto.outputs:type_name -> protocol.RecipeProto.OutputsEntry
 	48, // 25: protocol.ProductionStatus.queue:type_name -> protocol.CraftJobProto
 	47, // 26: protocol.ProductionStatus.recipes:type_name -> protocol.RecipeProto
 	50, // 27: protocol.PlayerProgressMsg.skills:type_name -> protocol.SkillProto
@@ -5072,7 +5124,7 @@ func file_pkg_protocol_messages_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_protocol_messages_proto_rawDesc), len(file_pkg_protocol_messages_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   63,
+			NumMessages:   64,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

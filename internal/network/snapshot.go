@@ -140,6 +140,17 @@ func BuildEntitySnapshot(world *ecs.World, id domain.EntityID) *protocol.EntityS
 		snap.Name = fmt.Sprintf("База ур.%d", base.Level)
 	}
 
+	// Planet development level (Phase 5) — reuses base_level to carry the "structure level".
+	if pVal, ok := world.GetComponent(id, domain.Planet{}); ok {
+		planet := pVal.(*domain.Planet)
+		snap.BaseLevel = planet.DevelopmentLevel
+		if planet.OwnerID == 0 {
+			snap.Name = "Планета (свободна)"
+		} else {
+			snap.Name = fmt.Sprintf("Планета ур.%d", planet.DevelopmentLevel)
+		}
+	}
+
 	// Ship Config (for rendering/UI visuals)
 	if cfgVal, ok := world.GetComponent(id, domain.ShipConfig{}); ok {
 		snap.ShipType = cfgVal.(*domain.ShipConfig).ShipType

@@ -62,6 +62,9 @@ enum PacketType {
   // Phase 5 space bases
   C_BUILD_BASE = 37;
   C_UPGRADE_BASE = 38;
+
+  // Phase 5 planets
+  C_DEVELOP_PLANET = 39;
 }
 
 message Packet {
@@ -527,4 +530,8 @@ message BuildBaseRequest {
 
 message UpgradeBaseRequest {
   uint64 base_id = 1;
+}
+
+message DevelopPlanetRequest {
+  uint64 planet_id = 1;
 }

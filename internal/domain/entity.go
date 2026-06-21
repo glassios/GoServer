@@ -22,6 +22,7 @@ const (
 	EntityLootContainer
 	EntityCombatMarker
 	EntitySpaceBase
+	EntityPlanet
 )
 
 func (e EntityType) String() string {
@@ -44,6 +45,8 @@ func (e EntityType) String() string {
 		return "CombatMarker"
 	case EntitySpaceBase:
 		return "SpaceBase"
+	case EntityPlanet:
+		return "Planet"
 	default:
 		return "Unknown"
 	}

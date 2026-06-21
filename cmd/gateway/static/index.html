@@ -702,6 +702,7 @@
                 <button class="btn btn-action" id="btn-join-combat" onclick="showJoinCombatDialog()" style="background: var(--accent-orange); color: white; display: none; margin-top:0;">Join Battle</button>
                 <button class="btn btn-action" id="btn-attack-fleet" onclick="attackTargetFleet()" style="background: var(--accent-orange); color: white; display: none; margin-top:0;">Attack Fleet</button>
                 <button class="btn btn-action" id="btn-upgrade-base" onclick="upgradeBase(Number(targetID))" style="background: var(--accent-cyan); color: white; display: none; margin-top:0;">Улучшить базу (10 IronPlates + 5 TitaniumPlates)</button>
+                <button class="btn btn-action" id="btn-develop-planet" onclick="developPlanet(Number(targetID))" style="background: var(--accent-green, #4caf50); color: white; display: none; margin-top:0;">Развить планету (15 IronPlates + 10 TitaniumPlates)</button>
             </div>
 
             <!-- Station Interaction Panel -->
@@ -1436,6 +1437,7 @@
             case 5: return 'Врата';
             case 6: return 'Контейнер';
             case 8: return 'База';
+            case 9: return 'Планета';
             default: return 'Неизвестно';
         }
     }
@@ -1856,6 +1858,11 @@
     function upgradeBase(baseId) {
         if (!(socket && socket.readyState === WebSocket.OPEN)) return;
         socket.send(JSON.stringify({ action: 'upgrade_base', target_id: baseId }));
+    }
+
+    function developPlanet(planetId) {
+        if (!(socket && socket.readyState === WebSocket.OPEN)) return;
+        socket.send(JSON.stringify({ action: 'develop_planet', target_id: planetId }));
     }
 
     // Animate the active research bar between server pushes.
@@ -2361,6 +2368,10 @@
         // Space base: show upgrade button (server enforces ownership + cost).
         const btnUpgradeBase = document.getElementById('btn-upgrade-base');
         if (btnUpgradeBase) btnUpgradeBase.style.display = (ent.type === 8) ? 'block' : 'none';
+
+        // Planet: show develop button (server enforces ownership/proximity + cost).
+        const btnDevelopPlanet = document.getElementById('btn-develop-planet');
+        if (btnDevelopPlanet) btnDevelopPlanet.style.display = (ent.type === 9) ? 'block' : 'none';
 
         // Check if player can manually attack target fleet (Player/NPC) on main map
         if (currentSystemID < 10000 && localPlayerID && entities.has(localPlayerID) && ent.id !== localPlayerID && (ent.type === 0 || ent.type === 1)) {
@@ -3021,6 +3032,9 @@
                 case 8: // SPACE BASE
                     drawSpaceBaseShape(ent);
                     break;
+                case 9: // PLANET
+                    drawPlanetShape(ent);
+                    break;
             }
         }
 
@@ -3136,6 +3150,7 @@
             case 6: r = 8;  break; // Loot Container
             case 7: r = 18; break; // Combat Marker
             case 8: r = 40; break; // Space Base
+            case 9: r = 70; break; // Planet
             default: r = 10;
         }
         if (type === 2 && typeof arg === 'object' && arg !== null && arg.maxHp > 0) {
@@ -3348,6 +3363,33 @@
     }
 
     // Draw space Station structure
+    function drawPlanetShape(ent) {
+        const r = getEntityRadius(ent);
+        const dev = ent.baseLevel || 0;
+        // Body — colored sphere with a subtle terminator shadow.
+        const grad = ctx.createRadialGradient(-r * 0.3, -r * 0.3, r * 0.2, 0, 0, r);
+        grad.addColorStop(0, '#6fae8f');
+        grad.addColorStop(1, '#1f3b30');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        // Development rings (one per level, capped for sanity).
+        ctx.strokeStyle = 'var(--accent-cyan)';
+        ctx.lineWidth = 1.5;
+        const rings = Math.min(dev, 5);
+        for (let i = 1; i <= rings; i++) {
+            ctx.globalAlpha = 0.5;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, r + 6 + i * 5, (r + 6 + i * 5) * 0.32, Math.PI / 6, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+    }
+
     function drawSpaceBaseShape(ent) {
         const r = getEntityRadius(ent);
         const col = getTeamColor(ent.factionId);
