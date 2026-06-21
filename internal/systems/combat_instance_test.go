@@ -157,7 +157,7 @@ func TestCombatInstance_LimitAndAlliances(t *testing.T) {
 	mainGrid := spatial.NewHashGrid(100)
 	systemID := uint32(1)
 
-	im := NewInstanceManager(bus, mainGrid, systemID, nil, logger)
+	im := NewInstanceManager(bus, mainGrid, systemID, nil, nil, logger)
 
 	// Создаем участников
 	var fleets []domain.EntityID
@@ -227,7 +227,7 @@ func TestCombatInstance_EngagementAndResolution(t *testing.T) {
 	mainGrid := spatial.NewHashGrid(100)
 	systemID := uint32(1)
 
-	im := NewInstanceManager(bus, mainGrid, systemID, nil, logger)
+	im := NewInstanceManager(bus, mainGrid, systemID, nil, nil, logger)
 	engageSys := NewFleetEngagementSystem(im, mainGrid)
 
 	// Создаем пирата и шахтера на расстоянии 18 единиц (< 30 авто-бой)
@@ -325,7 +325,7 @@ func TestCombatInstance_PreventDoubleCombat(t *testing.T) {
 	mainGrid := spatial.NewHashGrid(100)
 	systemID := uint32(1)
 
-	im := NewInstanceManager(bus, mainGrid, systemID, nil, logger)
+	im := NewInstanceManager(bus, mainGrid, systemID, nil, nil, logger)
 
 	fleet1 := domain.EntityID(301)
 	mainWorld.RegisterEntityWithID(fleet1, domain.EntityPlayer)

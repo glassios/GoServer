@@ -45,9 +45,10 @@ type InstanceManager struct {
 	randSource   *rand.Rand
 	systemID     uint32
 	playerRepo   domain.PlayerRepository
+	shipRepo     domain.ShipRepository // fitting catalog source (Phase 0: wired; Phase 1: used by combat baking)
 }
 
-func NewInstanceManager(bus messaging.MessageBus, mainGrid *spatial.HashGrid, systemID uint32, playerRepo domain.PlayerRepository, logger *zap.Logger) *InstanceManager {
+func NewInstanceManager(bus messaging.MessageBus, mainGrid *spatial.HashGrid, systemID uint32, playerRepo domain.PlayerRepository, shipRepo domain.ShipRepository, logger *zap.Logger) *InstanceManager {
 	return &InstanceManager{
 		bus:        bus,
 		mainGrid:   mainGrid,
@@ -57,6 +58,7 @@ func NewInstanceManager(bus messaging.MessageBus, mainGrid *spatial.HashGrid, sy
 		randSource: rand.New(rand.NewSource(time.Now().UnixNano())),
 		systemID:   systemID,
 		playerRepo: playerRepo,
+		shipRepo:   shipRepo,
 	}
 }
 

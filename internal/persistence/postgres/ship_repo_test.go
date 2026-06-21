@@ -51,9 +51,10 @@ func TestShipFitting_Integration(t *testing.T) {
 	}
 	slotsJSON, _ := json.Marshal(slots)
 
+	// Use an id outside the range seeded by migration 009_fitting_seed.sql to avoid PK collision.
 	_, err = db.ExecContext(ctx, `
 		INSERT INTO ship_hulls (id, hull_id, name, base_hp, base_armor, base_shield_max, shield_type, shield_arc, shield_efficiency, base_max_speed, base_turn_rate, ordnance_points, weapon_slots)
-		VALUES (1, 'lasher', 'Lasher Frigate', 100.0, 50.0, 50.0, 'omni', 90.0, 1.0, 100.0, 2.0, 50, $1)
+		VALUES (9001, 'lasher', 'Lasher Frigate', 100.0, 50.0, 50.0, 'omni', 90.0, 1.0, 100.0, 2.0, 50, $1)
 	`, slotsJSON)
 	if err != nil {
 		t.Fatalf("failed to seed ship hulls: %v", err)
@@ -84,7 +85,7 @@ func TestShipFitting_Integration(t *testing.T) {
 	config := &domain.ShipConfiguration{
 		OwnerID:        1,
 		OwnerType:      "player",
-		HullID:         1,
+		HullID:         9001,
 		CustomName:     "HMS Bounty",
 		FittedWeapons:  map[string]string{"WS001": "vulcan"},
 		FittedHullmods: []string{"auxiliary_thrusters"},

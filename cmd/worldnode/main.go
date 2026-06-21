@@ -109,6 +109,16 @@ func main() {
 		corpRepo = persistence.NewInMemoryCorporationRepository()
 	}
 
+	// Ship fitting repository: serves the Starsector hull/weapon/hullmod catalog.
+	// DB-backed when available, otherwise the in-memory catalog (kept in sync via
+	// migration 009 and internal/domain/fitting_catalog.go).
+	var shipRepo domain.ShipRepository
+	if db != nil {
+		shipRepo = postgres.NewPostgresShipRepository(db)
+	} else {
+		shipRepo = persistence.NewInMemoryShipRepository()
+	}
+
 	// 5. Connect to Messaging Bus (NATS or Mock)
 	var bus messaging.MessageBus
 	if cfg.NATS.URL != "" {
@@ -142,7 +152,7 @@ func main() {
 	cleanupSys := systems.NewCleanupSystem(grid)
 	jumpGateSys := systems.NewJumpGateSystem(bus, systemID, logger)
 
-	instanceManager := systems.NewInstanceManager(bus, grid, systemID, playerRepo, logger)
+	instanceManager := systems.NewInstanceManager(bus, grid, systemID, playerRepo, shipRepo, logger)
 	engagementSys := systems.NewFleetEngagementSystem(instanceManager, grid)
 
 	ecsSystems := []ecs.System{
