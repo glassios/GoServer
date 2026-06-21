@@ -872,6 +872,12 @@
             // Reset combat state on disconnect
             isShooting = false;
             isMining = false;
+            // Очищаем визуальное состояние, чтобы при переподключении не оставались
+            // «призрачные» корабли, частицы и числа урона из прошлой сессии.
+            damageNumbers = [];
+            particles = [];
+            entities.clear();
+            targetID = null;
             setTimeout(connectWS, 2000);
         };
 

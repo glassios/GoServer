@@ -80,7 +80,7 @@ func (s *CleanupSystem) Update(world *ecs.World, dt float64) {
 				}
 			}
 
-			hasLoot = len(items) > 0
+			hasLoot = len(items) > 0 || credits > 0
 
 			// Проверяем, находится ли сущность в боевом инстансе (имеет компонент CombatTeam).
 			// Если да, то лут в комнате боя НЕ выпадает.
@@ -98,11 +98,12 @@ func (s *CleanupSystem) Update(world *ecs.World, dt float64) {
 				world.AddComponent(lootEntity, &domain.Transform{X: posX, Y: posY})
 				world.AddComponent(lootEntity, &domain.Loot{Credits: credits})
 
-				lootCargo := &domain.Cargo{
-					Capacity: 999999,
-					Items:    items,
+				if len(items) > 0 {
+					world.AddComponent(lootEntity, &domain.Cargo{
+						Capacity: 999999,
+						Items:    items,
+					})
 				}
-				world.AddComponent(lootEntity, lootCargo)
 
 				if s.grid != nil {
 					s.grid.Insert(lootEntity, posX, posY)

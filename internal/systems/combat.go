@@ -115,6 +115,9 @@ func (s *CombatSystem) Update(world *ecs.World, dt float64) {
 		weapon.IsFiring = true
 
 		damage := weapon.Damage
+		if damage <= 0 {
+			continue // Защита от нулевого/отрицательного урона (иначе щит бы "лечился")
+		}
 		shieldVal, foundShield := world.GetComponent(targetID, domain.Shield{})
 
 		// Damage absorption

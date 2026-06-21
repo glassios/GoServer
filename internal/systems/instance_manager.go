@@ -28,11 +28,11 @@ type CombatInstance struct {
 	Teams            map[domain.EntityID]uint32 // FleetID -> TeamID
 	NextTeamID       uint32
 	ShipEntities     map[domain.EntityID][]domain.EntityID // FleetID -> list of ship entity IDs in instance
-	CommandQueue     chan protocol.ServerCommand
 	Subscriptions    []messaging.Subscription
 	TickCount        uint64
 	LastSnapshotTime float64
 	AccumulatedTime  float64
+	MaxDuration      float64 // Предел длительности боя (сек) — защита от зависших инстансов
 }
 
 type InstanceManager struct {
@@ -132,8 +132,8 @@ func (m *InstanceManager) CreateCombatInstance(mainWorld *ecs.World, attackerID,
 		Teams:            make(map[domain.EntityID]uint32),
 		NextTeamID:       3,
 		ShipEntities:     make(map[domain.EntityID][]domain.EntityID),
-		CommandQueue:     make(chan protocol.ServerCommand, 1000),
 		Subscriptions:    nil,
+		MaxDuration:      120.0,
 	}
 
 	// Распределяем участников по стартовым сторонам
@@ -165,19 +165,8 @@ func (m *InstanceManager) CreateCombatInstance(mainWorld *ecs.World, attackerID,
 	m.setFleetCombatState(mainWorld, attackerID, true, instID, defenderID)
 	m.setFleetCombatState(mainWorld, defenderID, true, instID, attackerID)
 
-	// Подписываемся на команды ввода для данного боя
-	inputTopic := fmt.Sprintf("system.%d.input", instID)
-	sub, err := m.bus.Subscribe(inputTopic, func(msg *messaging.Message) {
-		var cmd protocol.ServerCommand
-		if err := proto.Unmarshal(msg.Data, &cmd); err == nil {
-			inst.CommandQueue <- cmd
-		}
-	})
-	if err != nil {
-		m.logger.Error("Failed to subscribe to combat input topic", zap.String("topic", inputTopic), zap.Error(err))
-	} else {
-		inst.Subscriptions = append(inst.Subscriptions, sub)
-	}
+	// Бой полностью автоматический (AI vs AI), поэтому подписка на команды ввода игрока
+	// не создаётся — это исключает утечку горутины колбэка и мёртвый канал команд.
 
 	m.instances[instID] = inst
 
@@ -288,24 +277,27 @@ func (m *InstanceManager) Update(mainWorld *ecs.World, dt float64) {
 	for id, inst := range m.instances {
 		inst.AccumulatedTime += dt
 
-		// 1. Обрабатываем пришедшие команды управления
-		m.processInstanceCommands(inst)
-
-		// 2. Тикаем локальные ECS системы боевого инстанса
+		// 1. Тикаем локальные ECS системы боевого инстанса
 		for _, sys := range inst.Systems {
 			sys.Update(inst.World, dt)
 		}
 
 		inst.TickCount++
 
-		// 3. Отправляем периодические снимки состояния боя (snapshot) клиентам
+		// 2. Отправляем периодические снимки состояния боя (snapshot) клиентам
 		if inst.AccumulatedTime-inst.LastSnapshotTime >= 0.05 { // 20 TPS snapshots
 			inst.LastSnapshotTime = inst.AccumulatedTime
 			m.broadcastInstanceSnapshot(inst)
 		}
 
-		// 4. Проверяем условие завершения боя
+		// 3. Проверяем условие завершения боя или превышение лимита времени
 		if m.checkCombatEnded(inst) {
+			finishedInstances = append(finishedInstances, id)
+		} else if inst.MaxDuration > 0 && inst.AccumulatedTime >= inst.MaxDuration {
+			m.logger.Warn("Combat instance exceeded max duration, force-resolving",
+				zap.Uint32("instanceID", inst.InstanceID),
+				zap.Float64("duration", inst.AccumulatedTime),
+			)
 			finishedInstances = append(finishedInstances, id)
 		}
 	}
@@ -315,21 +307,6 @@ func (m *InstanceManager) Update(mainWorld *ecs.World, dt float64) {
 		inst := m.instances[id]
 		m.resolveCombat(mainWorld, inst)
 		delete(m.instances, id)
-	}
-}
-
-func (m *InstanceManager) processInstanceCommands(inst *CombatInstance) {
-	qLen := len(inst.CommandQueue)
-	for i := 0; i < qLen; i++ {
-		select {
-		case cmd := <-inst.CommandQueue:
-			// В полностью автоматическом бою ручные команды перемещения (C_MOVE_INPUT)
-			// и стрельбы (C_SHOOT_INPUT) от игрока игнорируются, так как флагман
-			// управляется AIState с поведением Attack.
-			_ = cmd
-		default:
-			return
-		}
 	}
 }
 
@@ -401,7 +378,10 @@ func (m *InstanceManager) resolveCombat(mainWorld *ecs.World, inst *CombatInstan
 
 	// 1. Отписываемся от NATS событий инстанса
 	for _, sub := range inst.Subscriptions {
-		_ = sub.Unsubscribe()
+		if err := sub.Unsubscribe(); err != nil {
+			m.logger.Error("Failed to unsubscribe combat instance subscription",
+				zap.Uint32("instanceID", inst.InstanceID), zap.Error(err))
+		}
 	}
 
 	// 2. Собираем результаты выживших кораблей обратно во флоты в основном мире
@@ -449,11 +429,13 @@ func (m *InstanceManager) resolveCombat(mainWorld *ecs.World, inst *CombatInstan
 				items = append([]domain.ItemInstance{}, cargoVal.(*domain.Cargo).Items...)
 			}
 
-			if len(items) > 0 {
+			if len(items) > 0 || credits > 0 {
 				lootEntity := mainWorld.CreateEntity(domain.EntityLootContainer)
 				mainWorld.AddComponent(lootEntity, &domain.Transform{X: posX, Y: posY})
 				mainWorld.AddComponent(lootEntity, &domain.Loot{Credits: credits})
-				mainWorld.AddComponent(lootEntity, &domain.Cargo{Items: items, Capacity: 99999})
+				if len(items) > 0 {
+					mainWorld.AddComponent(lootEntity, &domain.Cargo{Items: items, Capacity: 99999})
+				}
 				m.mainGrid.Insert(lootEntity, posX, posY)
 			}
 

@@ -372,3 +372,79 @@ func TestCombatInstance_PreventDoubleCombat(t *testing.T) {
 		t.Error("Expected JoinCombatInstance to fail when joining fleet is already in combat")
 	}
 }
+
+// Регрессионный тест: после боя HP/SH сущности флота в основном мире должны отражать
+// урон ведущего корабля, а не доболевые значения (баг "после боя HP и SH отображаются неверно").
+func TestCombatInstance_PackFleetSyncsEntityHealth(t *testing.T) {
+	sourceWorld := ecs.NewWorld()
+	targetWorld := ecs.NewWorld()
+
+	playerID := domain.EntityID(101)
+	sourceWorld.RegisterEntityWithID(playerID, domain.EntityPlayer)
+	sourceWorld.AddComponent(playerID, &domain.Fleet{Ships: []domain.FleetShip{
+		{ShipID: 1, ShipType: "fighter", Health: 100, MaxHealth: 100, Shield: 50, MaxShield: 50},
+	}})
+	// Сущность в основном мире имеет полные HP/SH до боя
+	sourceWorld.AddComponent(playerID, &domain.Health{Current: 100, Max: 100})
+	sourceWorld.AddComponent(playerID, &domain.Shield{Current: 50, Max: 50, RegenRate: 1.0})
+
+	shipEntities := UnpackFleet(sourceWorld, targetWorld, playerID, 1, 0, 0, 0)
+
+	// Флагман получает урон в бою: HP 100->40, SH 50->10
+	hVal, _ := targetWorld.GetComponent(shipEntities[0], domain.Health{})
+	hVal.(*domain.Health).Current = 40
+	sVal, _ := targetWorld.GetComponent(shipEntities[0], domain.Shield{})
+	sVal.(*domain.Shield).Current = 10
+
+	if alive := PackFleet(sourceWorld, targetWorld, playerID, shipEntities); !alive {
+		t.Fatal("Expected fleet to survive")
+	}
+
+	hMain, _ := sourceWorld.GetComponent(playerID, domain.Health{})
+	if hMain.(*domain.Health).Current != 40 {
+		t.Errorf("Expected entity Health synced to 40 after combat, got %d", hMain.(*domain.Health).Current)
+	}
+	sMain, _ := sourceWorld.GetComponent(playerID, domain.Shield{})
+	if sMain.(*domain.Shield).Current != 10 {
+		t.Errorf("Expected entity Shield synced to 10 after combat, got %d", sMain.(*domain.Shield).Current)
+	}
+}
+
+// Регрессионный тест: миграция через прыжковый гейт должна сохранять полный состав флота с HP/SH
+// (баг "при входе в гейт HP и SH флота сбрасываются").
+func TestJumpGate_MigrationPreservesFleet(t *testing.T) {
+	srcWorld := ecs.NewWorld()
+
+	playerID := domain.EntityID(777)
+	srcWorld.RegisterEntityWithID(playerID, domain.EntityPlayer)
+	srcWorld.AddComponent(playerID, &domain.Transform{X: 10, Y: 20})
+	srcWorld.AddComponent(playerID, &domain.Health{Current: 55, Max: 100})
+	srcWorld.AddComponent(playerID, &domain.Shield{Current: 5, Max: 50, RegenRate: 1.0})
+	srcWorld.AddComponent(playerID, &domain.PlayerData{Name: "Jumper", Credits: 500})
+	// Флот с повреждённым эскортом
+	srcWorld.AddComponent(playerID, &domain.Fleet{Ships: []domain.FleetShip{
+		{ShipID: 1, ShipType: "fighter", Health: 55, MaxHealth: 100, Shield: 5, MaxShield: 50, CargoCapacity: 100},
+		{ShipID: 2, ShipType: "miner", Health: 12, MaxHealth: 80, Shield: 3, MaxShield: 30, CargoCapacity: 150},
+	}})
+
+	payload := SerializePlayer(srcWorld, playerID)
+
+	// Восстанавливаем во "втором" мире (как на целевом узле)
+	dstWorld := ecs.NewWorld()
+	newID := DeserializePlayer(dstWorld, payload)
+
+	flVal, ok := dstWorld.GetComponent(newID, domain.Fleet{})
+	if !ok {
+		t.Fatal("Expected Fleet component after migration")
+	}
+	fleet := flVal.(*domain.Fleet)
+	if len(fleet.Ships) != 2 {
+		t.Fatalf("Expected 2 ships preserved across gate, got %d", len(fleet.Ships))
+	}
+	if fleet.Ships[0].Health != 55 || fleet.Ships[0].Shield != 5 {
+		t.Errorf("Flagship HP/SH not preserved: %+v", fleet.Ships[0])
+	}
+	if fleet.Ships[1].ShipType != "miner" || fleet.Ships[1].Health != 12 || fleet.Ships[1].Shield != 3 {
+		t.Errorf("Escort HP/SH/roster not preserved (was reset?): %+v", fleet.Ships[1])
+	}
+}

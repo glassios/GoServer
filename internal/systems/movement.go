@@ -49,9 +49,15 @@ func (s *MovementSystem) Update(world *ecs.World, dt float64) {
 		trans := tVal.(*domain.Transform)
 		vel := vVal.(*domain.Velocity)
 
+		// В боевом инстансе (есть CombatTeam) движением управляет AISystem,
+		// который держит дистанцию ведения огня. Здесь мы НЕ перехватываем
+		// движение к цели, иначе корабль подлетает вплотную (dist<=25) и
+		// игнорирует боевую дистанцию.
+		_, inCombatInstance := world.GetComponent(id, domain.CombatTeam{})
+
 		// Если у сущности есть активное оружие с целью на карте мира,
-		// направляем ее движение к этой цели.
-		if wVal, hasWeapon := world.GetComponent(id, domain.Weapon{}); hasWeapon {
+		// направляем ее движение к этой цели (только вне боевого инстанса).
+		if wVal, hasWeapon := world.GetComponent(id, domain.Weapon{}); hasWeapon && !inCombatInstance {
 			weapon := wVal.(*domain.Weapon)
 			if weapon.Active && weapon.TargetID != 0 {
 				targetTVal, foundTargetT := world.GetComponent(weapon.TargetID, domain.Transform{})

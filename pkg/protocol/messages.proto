@@ -204,6 +204,16 @@ message ServerCommand {
   bytes payload = 3;
 }
 
+message FleetShipProto {
+  uint32 ship_id = 1;
+  string ship_type = 2;
+  int32 health = 3;
+  int32 max_health = 4;
+  int32 shield = 5;
+  int32 max_shield = 6;
+  int32 cargo_capacity = 7;
+}
+
 message PlayerMigrationPayload {
   uint64 player_id = 1;
   float x = 2;
@@ -235,6 +245,7 @@ message PlayerMigrationPayload {
   bool is_npc = 28;
   string ai_behavior = 29;
   uint64 ai_target_id = 30;
+  repeated FleetShipProto fleet_ships = 31;
 }
 
 message SystemTransferRequest {

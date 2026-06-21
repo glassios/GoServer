@@ -230,6 +230,23 @@ func SerializePlayer(world *ecs.World, id domain.EntityID) *protocol.PlayerMigra
 		payload.FactionId = f.FactionID
 	}
 
+	// Сериализуем весь флот (по-корабельно), чтобы HP/SH/состав сохранялись при прыжке через гейт.
+	if flVal, foundFleet := world.GetComponent(id, domain.Fleet{}); foundFleet {
+		fleet := flVal.(*domain.Fleet)
+		payload.FleetShips = make([]*protocol.FleetShipProto, 0, len(fleet.Ships))
+		for _, ship := range fleet.Ships {
+			payload.FleetShips = append(payload.FleetShips, &protocol.FleetShipProto{
+				ShipId:        ship.ShipID,
+				ShipType:      ship.ShipType,
+				Health:        ship.Health,
+				MaxHealth:     ship.MaxHealth,
+				Shield:        ship.Shield,
+				MaxShield:     ship.MaxShield,
+				CargoCapacity: ship.CargoCapacity,
+			})
+		}
+	}
+
 	eType, hasEType := world.GetEntityType(id)
 	if hasEType && eType == domain.EntityNPC {
 		payload.IsNpc = true
@@ -288,28 +305,46 @@ func DeserializePlayer(world *ecs.World, payload *protocol.PlayerMigrationPayloa
 	if shipType == "" {
 		shipType = "fighter"
 	}
-	ships := []domain.FleetShip{
-		{
-			ShipID:        1,
-			ShipType:      shipType,
-			Health:        payload.Hp,
-			MaxHealth:     payload.MaxHp,
-			Shield:        payload.Shield,
-			MaxShield:     payload.MaxShield,
-			CargoCapacity: payload.CargoCapacity,
-		},
-	}
-	// For players, also recreate the default secondary escort miner ship
-	if !payload.IsNpc {
-		ships = append(ships, domain.FleetShip{
-			ShipID:        2,
-			ShipType:      "miner",
-			Health:        80,
-			MaxHealth:     80,
-			Shield:        30,
-			MaxShield:     30,
-			CargoCapacity: 150,
-		})
+
+	var ships []domain.FleetShip
+	if len(payload.FleetShips) > 0 {
+		// Восстанавливаем точный состав флота с сохранением HP/SH каждого корабля.
+		for _, fs := range payload.FleetShips {
+			ships = append(ships, domain.FleetShip{
+				ShipID:        fs.ShipId,
+				ShipType:      fs.ShipType,
+				Health:        fs.Health,
+				MaxHealth:     fs.MaxHealth,
+				Shield:        fs.Shield,
+				MaxShield:     fs.MaxShield,
+				CargoCapacity: fs.CargoCapacity,
+			})
+		}
+	} else {
+		// Fallback: старый формат миграции/новый спавн без данных о флоте.
+		ships = []domain.FleetShip{
+			{
+				ShipID:        1,
+				ShipType:      shipType,
+				Health:        payload.Hp,
+				MaxHealth:     payload.MaxHp,
+				Shield:        payload.Shield,
+				MaxShield:     payload.MaxShield,
+				CargoCapacity: payload.CargoCapacity,
+			},
+		}
+		// For players, also recreate the default secondary escort miner ship
+		if !payload.IsNpc {
+			ships = append(ships, domain.FleetShip{
+				ShipID:        2,
+				ShipType:      "miner",
+				Health:        80,
+				MaxHealth:     80,
+				Shield:        30,
+				MaxShield:     30,
+				CargoCapacity: 150,
+			})
+		}
 	}
 	world.AddComponent(playerID, &domain.Fleet{Ships: ships})
 

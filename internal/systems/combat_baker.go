@@ -144,7 +144,8 @@ func UnpackFleet(sourceWorld, targetWorld *ecs.World, fleetEntityID domain.Entit
 }
 
 // PackFleet собирает выжившие корабли из targetWorld обратно во флот в sourceWorld.
-// Если флагман уничтожен, весь флот считается уничтоженным.
+// Флот считается уничтоженным только если не уцелел ни один корабль. Если флагман погиб,
+// но эскорт выжил, флот продолжает существовать, а ведущим становится первый уцелевший корабль.
 func PackFleet(sourceWorld, targetWorld *ecs.World, fleetEntityID domain.EntityID, shipEntities []domain.EntityID) bool {
 	fleetVal, ok := sourceWorld.GetComponent(fleetEntityID, domain.Fleet{})
 	if !ok {
@@ -152,15 +153,15 @@ func PackFleet(sourceWorld, targetWorld *ecs.World, fleetEntityID domain.EntityI
 	}
 	fleet := fleetVal.(*domain.Fleet)
 
-	// Флагман - это первый элемент в переданном слайсе shipEntities (по определению UnpackFleet)
 	if len(shipEntities) == 0 {
 		fleet.Ships = nil
 		return false
 	}
 
-
-
 	var survivingShips []domain.FleetShip
+	// Синхронизируем HP/SH ведущего (первого выжившего) корабля на сущность флота в основном
+	// мире только один раз — иначе HUD/снимок показывают доболевые значения после боя.
+	entityStatsSynced := false
 
 	// Синхронизируем состояние выживших кораблей
 	for i, shipID := range shipEntities {
@@ -203,7 +204,29 @@ func PackFleet(sourceWorld, targetWorld *ecs.World, fleetEntityID domain.EntityI
 			CargoCapacity: originalShip.CargoCapacity,
 		})
 
-		// Если это флагман, синхронизируем Cargo и PlayerData (Credits) обратно
+		// Синхронизируем HP/SH ведущего (первого выжившего) корабля на сущность флота в основном
+		// мире. Флагман может быть уничтожен, но флот выживает за счёт эскорта — тогда ведущим
+		// становится первый уцелевший корабль.
+		if !entityStatsSynced {
+			entityStatsSynced = true
+			if hMainVal, ok := sourceWorld.GetComponent(fleetEntityID, domain.Health{}); ok {
+				hMain := hMainVal.(*domain.Health)
+				hMain.Current = h.Current
+				hMain.Max = h.Max
+			} else {
+				sourceWorld.AddComponent(fleetEntityID, &domain.Health{Current: h.Current, Max: h.Max})
+			}
+			if sMainVal, ok := sourceWorld.GetComponent(fleetEntityID, domain.Shield{}); ok {
+				sMain := sMainVal.(*domain.Shield)
+				sMain.Current = s.Current
+				sMain.Max = s.Max
+			} else {
+				sourceWorld.AddComponent(fleetEntityID, &domain.Shield{Current: s.Current, Max: s.Max, RegenRate: 1.0})
+			}
+		}
+
+		// Cargo и PlayerData (Credits) переносятся обратно только с выжившего флагмана,
+		// так как именно ему они копируются при распаковке (UnpackFleet).
 		if i == 0 {
 			if cargoVal, hasCargo := targetWorld.GetComponent(shipID, domain.Cargo{}); hasCargo {
 				cSourceVal, hasSourceCargo := sourceWorld.GetComponent(fleetEntityID, domain.Cargo{})
