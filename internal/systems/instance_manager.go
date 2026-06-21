@@ -600,6 +600,21 @@ func BuildCombatEntitySnapshot(world *ecs.World, id domain.EntityID) *protocol.E
 		snap.ShotsFired = fx.ShotsFired
 		snap.LastDamageType = fx.LastDamageType
 	}
+	if rVal, ok := world.GetComponent(id, domain.CombatRole{}); ok {
+		r := rVal.(*domain.CombatRole)
+		snap.Role = r.Role
+		if r.AssistTargetID != 0 {
+			snap.AssistTargetId = uint64(r.AssistTargetID)
+			if r.Role == domain.RoleRepair {
+				snap.AssistType = "repair"
+			} else if r.Role == domain.RoleSupport {
+				snap.AssistType = "support"
+			}
+		}
+	}
+	if stVal, ok := world.GetComponent(id, domain.CombatStrategy{}); ok {
+		snap.Strategy = stVal.(*domain.CombatStrategy).Stance
+	}
 	if cfgVal, ok := world.GetComponent(id, domain.ShipConfig{}); ok {
 		cfg := cfgVal.(*domain.ShipConfig)
 		snap.ShipType = cfg.ShipType

@@ -791,6 +791,7 @@
     let socket = null;
     let currentSystemID = 1;
     let entities = new Map(); // EntityID -> EntityState
+    let focusCounts = {};     // entityID -> number of attackers currently targeting it (focus-fire)
     let particles = [];
     let damageNumbers = [];
 
@@ -1086,6 +1087,10 @@
                     venting: ent.venting || false,
                     shotsFired: ent.shots_fired || 0,
                     lastDamageType: ent.last_damage_type || '',
+                    role: ent.role || '',
+                    strategy: ent.strategy || '',
+                    assistTargetId: ent.assist_target_id ? Number(ent.assist_target_id) : 0,
+                    assistType: ent.assist_type || '',
                     factionId: ent.faction_id,
                     corpId: ent.corp_id,
                     targetEntityId: ent.target_id ? Number(ent.target_id) : 0,
@@ -1136,6 +1141,10 @@
                     venting: ent.venting || false,
                     shotsFired: ent.shots_fired || 0,
                     lastDamageType: ent.last_damage_type || '',
+                    role: ent.role || '',
+                    strategy: ent.strategy || '',
+                    assistTargetId: ent.assist_target_id ? Number(ent.assist_target_id) : 0,
+                    assistType: ent.assist_type || '',
                     factionId: ent.faction_id,
                     corpId: ent.corp_id,
                     targetEntityId: ent.target_id ? Number(ent.target_id) : 0,
@@ -1181,6 +1190,14 @@
         }
 
         document.getElementById('entity-count').textContent = entities.size;
+
+        // Recompute focus-fire counts (how many ships are shooting each target).
+        focusCounts = {};
+        for (let e of entities.values()) {
+            if (e.isShooting && e.targetEntityId) {
+                focusCounts[e.targetEntityId] = (focusCounts[e.targetEntityId] || 0) + 1;
+            }
+        }
 
         // Keep camera centered on player and update UI stats
         let p = null;
@@ -2292,9 +2309,30 @@
         ctx.save();
         
         for (let ent of entities.values()) {
+            // Assist beams: repair (green) / support (cyan) from a support/repair ship to an ally.
+            if (ent.assistTargetId && entities.has(ent.assistTargetId)) {
+                const ally = entities.get(ent.assistTargetId);
+                const isRepair = ent.assistType === 'repair';
+                const col = isRepair ? '#39ff88' : '#00d0ff';
+                const pulse = 1.5 + Math.sin(Date.now() / 60) * 0.8;
+                ctx.save();
+                ctx.shadowBlur = 8;
+                ctx.shadowColor = col;
+                ctx.strokeStyle = col;
+                ctx.globalAlpha = 0.55;
+                ctx.setLineDash([6, 4]);
+                ctx.lineWidth = pulse + 1.5;
+                ctx.beginPath();
+                ctx.moveTo(ent.currX, ent.currY);
+                ctx.lineTo(ally.currX, ally.currY);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.restore();
+            }
+
             if (ent.targetEntityId && entities.has(ent.targetEntityId)) {
                 const target = entities.get(ent.targetEntityId);
-                
+
                 if (ent.isMining) {
                     let pulse = 2 + Math.sin(Date.now() / 30) * 1.5;
                     ctx.shadowBlur = 10;
@@ -2503,6 +2541,38 @@
             
             // Name Tag
             ctx.fillText(ent.name, 0, -getEntityRadius(ent) - 15);
+
+            // Role badge (combat instances only): T(ank)/D(ps)/S(upport)/R(epair)
+            if (ent.role && currentSystemID >= 10000) {
+                const roleInfo = {
+                    tank:    { ch: 'T', col: '#5ab0ff' },
+                    dps:     { ch: 'D', col: '#ff5d5d' },
+                    support: { ch: 'S', col: '#00d0ff' },
+                    repair:  { ch: 'R', col: '#39ff88' }
+                }[ent.role];
+                if (roleInfo) {
+                    ctx.font = "bold 8px 'Orbitron', sans-serif";
+                    ctx.fillStyle = roleInfo.col;
+                    let stanceTag = ent.strategy === 'retreat' ? ' ⮌' : (ent.strategy === 'defense' ? ' ⛉' : '');
+                    ctx.fillText(roleInfo.ch + stanceTag, 0, -getEntityRadius(ent) - 26);
+                    ctx.font = "bold 9px 'Orbitron', sans-serif";
+                    ctx.fillStyle = '#ffffff';
+                }
+            }
+
+            // Focus-fire reticle: this ship is being shot at by 2+ attackers.
+            if ((focusCounts[ent.id] || 0) >= 2) {
+                const rr = getEntityRadius(ent) + 7;
+                const t = Date.now() / 400;
+                ctx.strokeStyle = 'rgba(255,80,80,0.9)';
+                ctx.lineWidth = 1.5;
+                for (let k = 0; k < 4; k++) {
+                    const a = t + k * Math.PI / 2;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, rr, a, a + 0.5);
+                    ctx.stroke();
+                }
+            }
             
             // Render small stats bar underneath Name Tag (if HP > 0)
             if (ent.maxHp > 0 && ent.type !== 2 && ent.type !== 7) {

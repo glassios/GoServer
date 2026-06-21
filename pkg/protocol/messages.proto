@@ -144,6 +144,11 @@ message EntitySnapshot {
   bool venting = 43;
   string last_damage_type = 44; // type of the most recent damage taken (client damage-number color)
   int32 shots_fired = 45;       // weapon mounts that fired this tick (beam intensity)
+  // Phase 1.5 roles & tactics
+  string role = 46;              // tank | dps | support | repair
+  string strategy = 47;          // attack | defense | retreat
+  uint64 assist_target_id = 48;  // ally being repaired/supported this tick
+  string assist_type = 49;       // "repair" | "support" (for the assist beam color)
 }
 
 message WorldSnapshot {

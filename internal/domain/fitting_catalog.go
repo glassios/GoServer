@@ -209,6 +209,21 @@ func HullmodByID(modID string) *Hullmod {
 	return nil
 }
 
+// defaultRoleCycle gives an unconfigured fleet a varied, deterministic role spread so battles
+// show differentiated behavior even before the player assigns tactics.
+var defaultRoleCycle = []string{RoleDPS, RoleTank, RoleSupport, RoleRepair}
+
+// ResolveTactics fills in role/strategy defaults for a ship at the given fleet index.
+func ResolveTactics(role, strategy string, index int) (string, string) {
+	if role == "" {
+		role = defaultRoleCycle[index%len(defaultRoleCycle)]
+	}
+	if strategy == "" {
+		strategy = StanceAttack
+	}
+	return role, strategy
+}
+
 // BakedStats are the flat, combat-ready stats derived from a ShipConfiguration (hull + mods +
 // weapons + vents/capacitors). Computed purely from the in-code catalog — no repository needed —
 // so the combat instance can bake ships in both DB and DB-less modes. Mirrors the math in

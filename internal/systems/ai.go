@@ -725,89 +725,144 @@ func (s *AISystem) updateAttack(world *ecs.World, id domain.EntityID, myPos math
 
 	myTeamID := myTeamVal.(*domain.CombatTeam).TeamID
 
-	// Поиск ближайшего врага
-	var nearestEnemyID domain.EntityID
-	var nearestEnemyPos mathutil.Vec2
-	minDist := float32(math.MaxFloat32)
-	found := false
-
-	mask := ecs.BuildMask(domain.Transform{}, domain.Health{}, domain.CombatTeam{})
-	entities := world.Query(mask)
-
-	for _, entID := range entities {
-		if entID == id {
-			continue
-		}
-		teamVal, _ := world.GetComponent(entID, domain.CombatTeam{})
-		teamID := teamVal.(*domain.CombatTeam).TeamID
-
-		// Если это союзник, пропускаем
-		if teamID == myTeamID {
-			continue
-		}
-
-		hVal, _ := world.GetComponent(entID, domain.Health{})
-		health := hVal.(*domain.Health)
-		if health.Current <= 0 {
-			continue
-		}
-
-		tVal, _ := world.GetComponent(entID, domain.Transform{})
-		t := tVal.(*domain.Transform)
-		pos := mathutil.NewVec2(t.X, t.Y)
-		dist := myPos.Distance(pos)
-
-		if dist < minDist {
-			minDist = dist
-			nearestEnemyID = entID
-			nearestEnemyPos = pos
-			found = true
-		}
+	// Phase 1.5: role & stance drive positioning and target priority.
+	role := domain.RoleDPS
+	if rVal, ok := world.GetComponent(id, domain.CombatRole{}); ok {
+		role = rVal.(*domain.CombatRole).Role
+	}
+	stance := domain.StanceAttack
+	if stVal, ok := world.GetComponent(id, domain.CombatStrategy{}); ok {
+		stance = stVal.(*domain.CombatStrategy).Stance
 	}
 
 	wVal, hasWeapon := world.GetComponent(id, domain.Weapon{})
-	if found {
-		ai.TargetID = nearestEnemyID
+	targetID, targetPos, dist, found := selectCombatTarget(world, id, myTeamID, myPos)
 
-		if hasWeapon {
-			weapon := wVal.(*domain.Weapon)
-			weapon.TargetID = nearestEnemyID
-			weapon.Active = true
-
-			dir := nearestEnemyPos.Sub(myPos).Normalize()
-			minRange := weapon.Range * 0.7
-			maxRange := weapon.Range * 0.9
-
-			if minDist > maxRange {
-				// Вне зоны подлета: летим к цели
-				vel.X = dir.X * shipCfg.MaxSpeed
-				vel.Y = dir.Y * shipCfg.MaxSpeed
-			} else if minDist < minRange {
-				// Слишком близко: отлетаем назад
-				vel.X = -dir.X * shipCfg.MaxSpeed * 0.4
-				vel.Y = -dir.Y * shipCfg.MaxSpeed * 0.4
-			} else {
-				// В идеальном диапазоне [70% - 90%]: останавливаемся
-				vel.X = 0
-				vel.Y = 0
-			}
-			trans.Rotation = float32(math.Atan2(float64(dir.Y), float64(dir.X)))
-		} else {
-			// Оружия нет, просто летим к цели
-			dir := nearestEnemyPos.Sub(myPos).Normalize()
-			vel.X = dir.X * shipCfg.MaxSpeed
-			vel.Y = dir.Y * shipCfg.MaxSpeed
-			trans.Rotation = float32(math.Atan2(float64(dir.Y), float64(dir.X)))
-		}
-	} else {
-		// Врагов нет, отключаем оружие
+	if !found {
 		if hasWeapon {
 			wVal.(*domain.Weapon).Active = false
 		}
 		ai.TargetID = 0
 		vel.X = 0
 		vel.Y = 0
+		return
 	}
+
+	ai.TargetID = targetID
+	weaponRange := float32(300)
+	if hasWeapon {
+		weapon := wVal.(*domain.Weapon)
+		weapon.TargetID = targetID
+		weapon.Active = true
+		if weapon.Range > 0 {
+			weaponRange = weapon.Range
+		}
+	}
+
+	dirToTarget := targetPos.Sub(myPos)
+	if dirToTarget.Length() > 0 {
+		dirToTarget = dirToTarget.Normalize()
+	}
+	facing := float32(math.Atan2(float64(dirToTarget.Y), float64(dirToTarget.X)))
+
+	// Retreat: kite directly away from the threat (weapon stays active to fire while fleeing).
+	if stance == domain.StanceRetreat {
+		away := myPos.Sub(targetPos)
+		if away.Length() > 0 {
+			away = away.Normalize()
+		}
+		vel.X = away.X * shipCfg.MaxSpeed
+		vel.Y = away.Y * shipCfg.MaxSpeed
+		trans.Rotation = facing
+		return
+	}
+
+	// Role-based preferred engagement band (fraction of weapon range).
+	minFrac, maxFrac := float32(0.7), float32(0.9)
+	switch role {
+	case domain.RoleTank:
+		minFrac, maxFrac = 0.4, 0.65 // hold the front line, draw fire
+	case domain.RoleSupport, domain.RoleRepair:
+		minFrac, maxFrac = 0.9, 1.15 // stay at the back
+	}
+	minR := weaponRange * minFrac
+	maxR := weaponRange * maxFrac
+
+	// Defensive stance holds ground until the enemy closes in.
+	if stance == domain.StanceDefense && dist > weaponRange*1.25 {
+		vel.X = 0
+		vel.Y = 0
+		trans.Rotation = facing
+		return
+	}
+
+	if dist > maxR {
+		vel.X = dirToTarget.X * shipCfg.MaxSpeed
+		vel.Y = dirToTarget.Y * shipCfg.MaxSpeed
+	} else if dist < minR {
+		vel.X = -dirToTarget.X * shipCfg.MaxSpeed * 0.4
+		vel.Y = -dirToTarget.Y * shipCfg.MaxSpeed * 0.4
+	} else {
+		vel.X = 0
+		vel.Y = 0
+	}
+	trans.Rotation = facing
+}
+
+// selectCombatTarget picks an enemy by a threat score that yields natural focus fire: the
+// weakest enemy (lowest hull+armor+shield) is preferred, closer enemies are weighted higher,
+// and ships in the tank role get a "taunt" bonus so they draw fire from the front line.
+func selectCombatTarget(world *ecs.World, selfID domain.EntityID, myTeamID uint32, myPos mathutil.Vec2) (domain.EntityID, mathutil.Vec2, float32, bool) {
+	entities := world.Query(ecs.BuildMask(domain.Transform{}, domain.Health{}, domain.CombatTeam{}))
+
+	var bestID domain.EntityID
+	var bestPos mathutil.Vec2
+	var bestDist float32
+	bestScore := float32(math.MaxFloat32)
+	found := false
+
+	for _, entID := range entities {
+		if entID == selfID {
+			continue
+		}
+		teamVal, _ := world.GetComponent(entID, domain.CombatTeam{})
+		if teamVal.(*domain.CombatTeam).TeamID == myTeamID {
+			continue
+		}
+		hVal, _ := world.GetComponent(entID, domain.Health{})
+		h := hVal.(*domain.Health)
+		if h.Current <= 0 {
+			continue
+		}
+		tVal, _ := world.GetComponent(entID, domain.Transform{})
+		t := tVal.(*domain.Transform)
+		pos := mathutil.NewVec2(t.X, t.Y)
+		dist := myPos.Distance(pos)
+
+		effHP := float32(h.Current)
+		if aVal, ok := world.GetComponent(entID, domain.ArmorGrid{}); ok {
+			effHP += aVal.(*domain.ArmorGrid).Current
+		}
+		if sVal, ok := world.GetComponent(entID, domain.Shield{}); ok {
+			effHP += float32(sVal.(*domain.Shield).Current)
+		}
+
+		score := effHP*0.5 + dist
+		if rVal, ok := world.GetComponent(entID, domain.CombatRole{}); ok {
+			if rVal.(*domain.CombatRole).Role == domain.RoleTank {
+				score -= 400 // taunt: tanks are more attractive targets
+			}
+		}
+
+		if score < bestScore {
+			bestScore = score
+			bestID = entID
+			bestPos = pos
+			bestDist = dist
+			found = true
+		}
+	}
+	return bestID, bestPos, bestDist, found
 }
 
 func (s *AISystem) updateEscort(world *ecs.World, id domain.EntityID, myPos mathutil.Vec2, trans *domain.Transform, vel *domain.Velocity, ai *domain.AIState, shipCfg *domain.ShipConfig) {

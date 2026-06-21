@@ -6,6 +6,7 @@ import (
 
 	"github.com/Home/galaxy-mmo/internal/domain"
 	"github.com/Home/galaxy-mmo/internal/ecs"
+	"github.com/Home/galaxy-mmo/pkg/mathutil"
 )
 
 // CombatSystem implements the Phase 1 Starsector-style core combat sim:
@@ -54,6 +55,112 @@ func (s *CombatSystem) Update(world *ecs.World, dt float64) {
 	// Pass 2: firing — only ships with a weapon group inside a combat instance (CombatTeam).
 	for _, attackerID := range world.Query(ecs.BuildMask(domain.Transform{}, domain.WeaponGroup{}, domain.CombatTeam{})) {
 		s.fire(world, attackerID, dtf)
+	}
+
+	// Pass 3: role abilities (repair / support) on allies.
+	for _, id := range world.Query(ecs.BuildMask(domain.CombatRole{}, domain.Transform{}, domain.CombatTeam{})) {
+		s.roleAbility(world, id, dtf)
+	}
+}
+
+// roleAbility applies the support/repair role abilities: repair restores a wounded ally's hull
+// and armor; support bleeds off a flux-stressed ally's flux. The chosen ally is recorded as
+// AssistTargetID so the visualizer can draw the assist beam.
+func (s *CombatSystem) roleAbility(world *ecs.World, id domain.EntityID, dtf float32) {
+	rVal, ok := world.GetComponent(id, domain.CombatRole{})
+	if !ok {
+		return
+	}
+	cr := rVal.(*domain.CombatRole)
+	cr.AssistTargetID = 0
+	if cr.Role != domain.RoleRepair && cr.Role != domain.RoleSupport {
+		return
+	}
+
+	teamVal, _ := world.GetComponent(id, domain.CombatTeam{})
+	myTeam := teamVal.(*domain.CombatTeam).TeamID
+	tVal, _ := world.GetComponent(id, domain.Transform{})
+	mt := tVal.(*domain.Transform)
+	myPos := mathutil.NewVec2(mt.X, mt.Y)
+
+	const assistRange = 700.0
+	var bestAlly domain.EntityID
+	bestMetric := float32(0)
+	found := false
+
+	for _, allyID := range world.Query(ecs.BuildMask(domain.Transform{}, domain.Health{}, domain.CombatTeam{})) {
+		if allyID == id {
+			continue
+		}
+		atVal, _ := world.GetComponent(allyID, domain.CombatTeam{})
+		if atVal.(*domain.CombatTeam).TeamID != myTeam {
+			continue
+		}
+		ahVal, _ := world.GetComponent(allyID, domain.Health{})
+		ah := ahVal.(*domain.Health)
+		if ah.Current <= 0 {
+			continue
+		}
+		ptVal, _ := world.GetComponent(allyID, domain.Transform{})
+		pt := ptVal.(*domain.Transform)
+		if myPos.Distance(mathutil.NewVec2(pt.X, pt.Y)) > assistRange {
+			continue
+		}
+
+		var metric float32
+		if cr.Role == domain.RoleRepair {
+			metric = float32(ah.Max - ah.Current)
+			if arVal, ok := world.GetComponent(allyID, domain.ArmorGrid{}); ok {
+				ar := arVal.(*domain.ArmorGrid)
+				metric += ar.Max - ar.Current
+			}
+		} else { // support: help whoever is closest to flux overload
+			if fVal, ok := world.GetComponent(allyID, domain.FluxState{}); ok {
+				metric = fVal.(*domain.FluxState).Current
+			}
+		}
+		if metric > bestMetric {
+			bestMetric = metric
+			bestAlly = allyID
+			found = true
+		}
+	}
+
+	if !found {
+		return
+	}
+	cr.AssistTargetID = bestAlly
+
+	if cr.Role == domain.RoleRepair {
+		// Accumulate fractional hull repair (Health is int32).
+		cr.AbilityTimer += 22 * float64(dtf)
+		if hVal, ok := world.GetComponent(bestAlly, domain.Health{}); ok {
+			h := hVal.(*domain.Health)
+			if whole := int32(cr.AbilityTimer); whole > 0 && h.Current < h.Max {
+				h.Current += whole
+				cr.AbilityTimer -= float64(whole)
+				if h.Current > h.Max {
+					h.Current = h.Max
+				}
+			}
+		}
+		if arVal, ok := world.GetComponent(bestAlly, domain.ArmorGrid{}); ok {
+			ar := arVal.(*domain.ArmorGrid)
+			if ar.Current < ar.Max {
+				ar.Current += 12 * dtf
+				if ar.Current > ar.Max {
+					ar.Current = ar.Max
+				}
+			}
+		}
+	} else { // support
+		if fVal, ok := world.GetComponent(bestAlly, domain.FluxState{}); ok {
+			f := fVal.(*domain.FluxState)
+			f.Current -= 45 * dtf
+			if f.Current < 0 {
+				f.Current = 0
+			}
+		}
 	}
 }
 

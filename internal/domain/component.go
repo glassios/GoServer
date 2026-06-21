@@ -166,6 +166,11 @@ type FleetShip struct {
 	Shield        int32
 	MaxShield     int32
 	CargoCapacity int32
+
+	// Phase 1.5 per-ship tactics, set by the player before battle (independent of hull type).
+	// Empty values fall back to sensible defaults at unpack time.
+	Role     string // "tank", "dps", "support", "repair"
+	Strategy string // "attack", "defense", "retreat"
 }
 
 type Fleet struct {
@@ -335,6 +340,31 @@ type CombatState struct {
 type CombatTeam struct {
 	TeamID  uint32
 	FleetID EntityID
+}
+
+// Combat roles & strategies (Phase 1.5). Assigned per ship before battle; drive the
+// tactical AI. Roles are RPG-style and independent of hull type.
+const (
+	RoleTank    = "tank"
+	RoleDPS     = "dps"
+	RoleSupport = "support"
+	RoleRepair  = "repair"
+
+	StanceAttack  = "attack"
+	StanceDefense = "defense"
+	StanceRetreat = "retreat"
+)
+
+// CombatRole drives role-specific behavior (positioning, target priority, abilities).
+type CombatRole struct {
+	Role           string
+	AssistTargetID EntityID // ally currently being repaired/supported (for FX/snapshot)
+	AbilityTimer   float64  // generic per-role ability accumulator
+}
+
+// CombatStrategy is the ship's stance for the engagement.
+type CombatStrategy struct {
+	Stance string
 }
 
 type CombatMarker struct {

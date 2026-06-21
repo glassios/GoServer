@@ -755,6 +755,11 @@ type EntitySnapshot struct {
 	Venting        bool   `protobuf:"varint,43,opt,name=venting,proto3" json:"venting,omitempty"`
 	LastDamageType string `protobuf:"bytes,44,opt,name=last_damage_type,json=lastDamageType,proto3" json:"last_damage_type,omitempty"` // type of the most recent damage taken (client damage-number color)
 	ShotsFired     int32  `protobuf:"varint,45,opt,name=shots_fired,json=shotsFired,proto3" json:"shots_fired,omitempty"`              // weapon mounts that fired this tick (beam intensity)
+	// Phase 1.5 roles & tactics
+	Role           string `protobuf:"bytes,46,opt,name=role,proto3" json:"role,omitempty"`                                              // tank | dps | support | repair
+	Strategy       string `protobuf:"bytes,47,opt,name=strategy,proto3" json:"strategy,omitempty"`                                      // attack | defense | retreat
+	AssistTargetId uint64 `protobuf:"varint,48,opt,name=assist_target_id,json=assistTargetId,proto3" json:"assist_target_id,omitempty"` // ally being repaired/supported this tick
+	AssistType     string `protobuf:"bytes,49,opt,name=assist_type,json=assistType,proto3" json:"assist_type,omitempty"`                // "repair" | "support" (for the assist beam color)
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1102,6 +1107,34 @@ func (x *EntitySnapshot) GetShotsFired() int32 {
 		return x.ShotsFired
 	}
 	return 0
+}
+
+func (x *EntitySnapshot) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
+func (x *EntitySnapshot) GetStrategy() string {
+	if x != nil {
+		return x.Strategy
+	}
+	return ""
+}
+
+func (x *EntitySnapshot) GetAssistTargetId() uint64 {
+	if x != nil {
+		return x.AssistTargetId
+	}
+	return 0
+}
+
+func (x *EntitySnapshot) GetAssistType() string {
+	if x != nil {
+		return x.AssistType
+	}
+	return ""
 }
 
 type WorldSnapshot struct {
@@ -2819,7 +2852,7 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
 	"\rsession_token\x18\x02 \x01(\tR\fsessionToken\x12\x1b\n" +
 	"\tentity_id\x18\x03 \x01(\x04R\bentityId\x12#\n" +
-	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\"\x81\v\n" +
+	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\"\xfc\v\n" +
 	"\x0eEntitySnapshot\x12\x1b\n" +
 	"\tentity_id\x18\x01 \x01(\x04R\bentityId\x12\x1f\n" +
 	"\ventity_type\x18\x02 \x01(\rR\n" +
@@ -2876,7 +2909,12 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"\aventing\x18+ \x01(\bR\aventing\x12(\n" +
 	"\x10last_damage_type\x18, \x01(\tR\x0elastDamageType\x12\x1f\n" +
 	"\vshots_fired\x18- \x01(\x05R\n" +
-	"shotsFired\"Y\n" +
+	"shotsFired\x12\x12\n" +
+	"\x04role\x18. \x01(\tR\x04role\x12\x1a\n" +
+	"\bstrategy\x18/ \x01(\tR\bstrategy\x12(\n" +
+	"\x10assist_target_id\x180 \x01(\x04R\x0eassistTargetId\x12\x1f\n" +
+	"\vassist_type\x181 \x01(\tR\n" +
+	"assistType\"Y\n" +
 	"\rWorldSnapshot\x12\x12\n" +
 	"\x04tick\x18\x01 \x01(\x04R\x04tick\x124\n" +
 	"\bentities\x18\x02 \x03(\v2\x18.protocol.EntitySnapshotR\bentities\"\x97\x01\n" +

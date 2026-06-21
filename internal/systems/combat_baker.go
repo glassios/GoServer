@@ -135,6 +135,11 @@ func UnpackFleet(sourceWorld, targetWorld *ecs.World, fleetEntityID domain.Entit
 			FleetID: fleetEntityID,
 		})
 
+		// Тактика боя (Phase 1.5): роль и стратегия из FleetShip (или дефолты по индексу).
+		role, stance := domain.ResolveTactics(ship.Role, ship.Strategy, i)
+		targetWorld.AddComponent(shipID, &domain.CombatRole{Role: role})
+		targetWorld.AddComponent(shipID, &domain.CombatStrategy{Stance: stance})
+
 		// Копируем принадлежность к корпорации
 		if hasCorp {
 			targetWorld.AddComponent(shipID, &domain.CorporationMember{
