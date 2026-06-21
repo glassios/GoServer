@@ -36,16 +36,16 @@ type CombatInstance struct {
 }
 
 type InstanceManager struct {
-	mu           sync.Mutex
-	bus          messaging.MessageBus
-	mainGrid     *spatial.HashGrid
-	logger       *zap.Logger
-	instances    map[uint32]*CombatInstance
-	nextInstID   uint32
-	randSource   *rand.Rand
-	systemID     uint32
-	playerRepo   domain.PlayerRepository
-	shipRepo     domain.ShipRepository // fitting catalog source (Phase 0: wired; Phase 1: used by combat baking)
+	mu         sync.Mutex
+	bus        messaging.MessageBus
+	mainGrid   *spatial.HashGrid
+	logger     *zap.Logger
+	instances  map[uint32]*CombatInstance
+	nextInstID uint32
+	randSource *rand.Rand
+	systemID   uint32
+	playerRepo domain.PlayerRepository
+	shipRepo   domain.ShipRepository // fitting catalog source (Phase 0: wired; Phase 1: used by combat baking)
 }
 
 func NewInstanceManager(bus messaging.MessageBus, mainGrid *spatial.HashGrid, systemID uint32, playerRepo domain.PlayerRepository, shipRepo domain.ShipRepository, logger *zap.Logger) *InstanceManager {
@@ -239,8 +239,8 @@ func (m *InstanceManager) JoinCombatInstance(mainWorld *ecs.World, instanceID ui
 			allyX = t.X
 			allyY = t.Y
 		}
-		baseX = allyX + float32(m.randSource.Float64()*100 - 50)
-		baseY = allyY + float32(m.randSource.Float64()*100 - 50)
+		baseX = allyX + float32(m.randSource.Float64()*100-50)
+		baseY = allyY + float32(m.randSource.Float64()*100-50)
 		angle = m.randSource.Float64() * math.Pi * 2
 	}
 
@@ -355,8 +355,47 @@ func (m *InstanceManager) checkCombatEnded(inst *CombatInstance) bool {
 	return len(activeTeams) <= 1
 }
 
+// tallyEnemyKills computes, per participating fleet, how many enemy (other-team) ships it helped
+// destroy, plus the set of teams that still have survivors. Pure so it can be unit-tested.
+func tallyEnemyKills(participants []domain.EntityID, teams map[domain.EntityID]uint32, initialCounts, aliveCounts map[domain.EntityID]int32) (killed map[domain.EntityID]int32, teamsWithSurvivors map[uint32]bool) {
+	killed = make(map[domain.EntityID]int32, len(participants))
+	teamsWithSurvivors = make(map[uint32]bool)
+	for _, f := range participants {
+		if aliveCounts[f] > 0 {
+			teamsWithSurvivors[teams[f]] = true
+		}
+	}
+	for _, f := range participants {
+		myTeam := teams[f]
+		var k int32
+		for _, other := range participants {
+			if teams[other] == myTeam {
+				continue
+			}
+			k += initialCounts[other] - aliveCounts[other]
+		}
+		killed[f] = k
+	}
+	return killed, teamsWithSurvivors
+}
+
 func (m *InstanceManager) resolveCombat(mainWorld *ecs.World, inst *CombatInstance) {
 	m.logger.Info("Resolving combat instance", zap.Uint32("instanceID", inst.InstanceID))
+
+	// Combat XP (Phase 3): tally enemy ships each fleet destroyed BEFORE PackFleet removes survivors.
+	initialCounts := make(map[domain.EntityID]int32, len(inst.Participants))
+	aliveCounts := make(map[domain.EntityID]int32, len(inst.Participants))
+	for _, fleetID := range inst.Participants {
+		initialCounts[fleetID] = int32(len(inst.ShipEntities[fleetID]))
+		var alive int32
+		for _, shipID := range inst.ShipEntities[fleetID] {
+			if _, ok := inst.World.GetEntityType(shipID); ok {
+				alive++
+			}
+		}
+		aliveCounts[fleetID] = alive
+	}
+	enemyKilled, teamsWithSurvivors := tallyEnemyKills(inst.Participants, inst.Teams, initialCounts, aliveCounts)
 
 	// Удаляем маркер боя из основного мира и получаем его координаты
 	var markerX, markerY float32
@@ -406,10 +445,25 @@ func (m *InstanceManager) resolveCombat(mainWorld *ecs.World, inst *CombatInstan
 			// Возвращаем в строй в основном мире
 			m.setFleetCombatState(mainWorld, fleetID, false, 0, 0)
 			m.logger.Info("Fleet survived combat and returned to main world", zap.Uint64("fleetID", uint64(fleetID)))
+
+			// Combat XP (Phase 3): reward surviving players for enemy ships destroyed + a win bonus.
+			if isPlayer {
+				if pgVal, ok := mainWorld.GetComponent(fleetID, domain.PlayerProgress{}); ok {
+					pg := pgVal.(*domain.PlayerProgress)
+					xp := enemyKilled[fleetID] * 25
+					if len(teamsWithSurvivors) == 1 && teamsWithSurvivors[inst.Teams[fleetID]] {
+						xp += 50 // last team standing
+					}
+					if xp > 0 {
+						pg.AddXP(domain.SkillCombat, xp)
+						PublishPlayerProgress(m.bus, mainWorld, fleetID)
+					}
+				}
+			}
 		} else {
 			// Флот полностью уничтожен! Удаляем сущность флота из основного мира
 			m.logger.Info("Fleet completely destroyed in combat", zap.Uint64("fleetID", uint64(fleetID)))
-			
+
 			// Сгенерируем контейнер с добычей в основном мире в месте, где завершился бой (положение маркера боя)
 			var posX, posY float32
 			if foundMarker {
@@ -500,7 +554,7 @@ func (m *InstanceManager) sendRoutingUpdates(mainWorld *ecs.World, inst *CombatI
 
 func (m *InstanceManager) ensureFleet(world *ecs.World, fleetID domain.EntityID) {
 	fleetVal, found := world.GetComponent(fleetID, domain.Fleet{})
-	
+
 	// Определяем тип кораблей для спавна в зависимости от фракции/типа
 	shipType := "fighter"
 	if pVal, ok := world.GetComponent(fleetID, domain.PlayerData{}); ok {

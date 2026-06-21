@@ -20,6 +20,12 @@ func UnpackFleet(sourceWorld, targetWorld *ecs.World, fleetEntityID domain.Entit
 		return nil
 	}
 
+	// Combat skill of the fleet commander buffs the whole fleet's weapon damage (Phase 3).
+	combatMult := float32(1)
+	if pgVal, ok := sourceWorld.GetComponent(fleetEntityID, domain.PlayerProgress{}); ok {
+		combatMult = pgVal.(*domain.PlayerProgress).WeaponDamageMult()
+	}
+
 	// Определяем тип сущности (игрок или NPC)
 	eType, exists := sourceWorld.GetEntityType(fleetEntityID)
 	if !exists {
@@ -113,6 +119,11 @@ func UnpackFleet(sourceWorld, targetWorld *ecs.World, fleetEntityID domain.Entit
 		// Per-mount weapons — the actual damage source in combat.
 		weapons := make([]domain.FittedWeaponState, len(stats.Weapons))
 		copy(weapons, stats.Weapons)
+		if combatMult != 1 {
+			for wi := range weapons {
+				weapons[wi].Definition.DamagePerShot *= combatMult
+			}
+		}
 		targetWorld.AddComponent(shipID, &domain.WeaponGroup{Weapons: weapons})
 
 		// Transient combat FX (shots fired / last damage type) for the snapshot.
