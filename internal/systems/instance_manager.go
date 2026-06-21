@@ -355,6 +355,15 @@ func (m *InstanceManager) checkCombatEnded(inst *CombatInstance) bool {
 	return len(activeTeams) <= 1
 }
 
+// lootDropChance is the per-item probability that a destroyed fleet's cargo item or fitted module
+// drops into the post-battle loot container.
+const lootDropChance = 0.10
+
+// rollLootDrop returns true ~lootDropChance of the time.
+func (m *InstanceManager) rollLootDrop() bool {
+	return m.randSource.Float64() < lootDropChance
+}
+
 // tallyEnemyKills computes, per participating fleet, how many enemy (other-team) ships it helped
 // destroy, plus the set of teams that still have survivors. Pure so it can be unit-tested.
 func tallyEnemyKills(participants []domain.EntityID, teams map[domain.EntityID]uint32, initialCounts, aliveCounts map[domain.EntityID]int32) (killed map[domain.EntityID]int32, teamsWithSurvivors map[uint32]bool) {
@@ -430,6 +439,21 @@ func (m *InstanceManager) resolveCombat(mainWorld *ecs.World, inst *CombatInstan
 		// Проверяем, является ли сущность игроком, до возможного ее уничтожения
 		_, isPlayer := mainWorld.GetComponent(fleetID, domain.PlayerData{})
 
+		// Снимаем установленные крафтовые модули ДО PackFleet (он обнуляет состав флота),
+		// чтобы при полном уничтожении флота они могли выпасть в лут (см. ниже).
+		var fittedModules []string
+		if flVal, ok := mainWorld.GetComponent(fleetID, domain.Fleet{}); ok {
+			fleet := flVal.(*domain.Fleet)
+			for i := range fleet.Ships {
+				cfg := fleet.Ships[i].EffectiveConfig()
+				for _, wid := range cfg.FittedWeapons {
+					if item := domain.ModuleItemForWeapon(wid); item != "" {
+						fittedModules = append(fittedModules, item)
+					}
+				}
+			}
+		}
+
 		shipEntities := inst.ShipEntities[fleetID]
 		alive := PackFleet(mainWorld, inst.World, fleetID, shipEntities)
 
@@ -475,14 +499,28 @@ func (m *InstanceManager) resolveCombat(mainWorld *ecs.World, inst *CombatInstan
 				posY = t.Y
 			}
 
-			// Вытягиваем кредиты и карго перед уничтожением
+			// Вытягиваем кредиты и формируем добычу. Содержимое карго и установленные модули
+			// уничтоженных кораблей попадают в лут лишь с шансом lootDropChance (10%) каждый.
 			var credits int64
 			var items []domain.ItemInstance
 			if pVal, ok := mainWorld.GetComponent(fleetID, domain.PlayerData{}); ok {
 				credits = pVal.(*domain.PlayerData).Credits
 			}
 			if cargoVal, ok := mainWorld.GetComponent(fleetID, domain.Cargo{}); ok {
-				items = append([]domain.ItemInstance{}, cargoVal.(*domain.Cargo).Items...)
+				for _, it := range cargoVal.(*domain.Cargo).Items {
+					if it.Quantity > 0 && m.rollLootDrop() {
+						items = append(items, it)
+					}
+				}
+			}
+			// Установленные крафтовые модули уничтоженных кораблей: 10% за каждый.
+			for _, mod := range fittedModules {
+				if !m.rollLootDrop() {
+					continue
+				}
+				if defID, ok := domain.ResourceToID[domain.ResourceType(mod)]; ok {
+					items = append(items, domain.ItemInstance{DefinitionID: defID, Quantity: 1, State: "normal"})
+				}
 			}
 
 			if len(items) > 0 || credits > 0 {
