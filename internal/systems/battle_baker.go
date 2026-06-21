@@ -99,12 +99,25 @@ func BakeShip(world *ecs.World, entityID domain.EntityID, config *domain.ShipCon
 	})
 
 	if config.Hull.ShieldType != "none" {
+		eff := config.Hull.ShieldEfficiency * shieldEfficiencyMult
+		if eff <= 0 {
+			eff = 1.0
+		}
 		world.AddComponent(entityID, &domain.Shield{
-			Current:   int32(maxShield),
-			Max:       int32(maxShield),
-			RegenRate: shieldEfficiencyMult,
+			Current:    int32(maxShield),
+			Max:        int32(maxShield),
+			RegenRate:  maxShield * 0.05, // 5% / sec
+			Type:       config.Hull.ShieldType,
+			Arc:        config.Hull.ShieldArc,
+			Efficiency: eff,
 		})
 	}
+
+	// Armor grid (Phase 1): sits between shields and hull, does not regen in combat.
+	world.AddComponent(entityID, &domain.ArmorGrid{
+		Current: maxArmor,
+		Max:     maxArmor,
+	})
 
 	world.AddComponent(entityID, &domain.ShipConfig{
 		ShipType: config.Hull.HullID,
@@ -136,9 +149,6 @@ func BakeShip(world *ecs.World, entityID domain.EntityID, config *domain.ShipCon
 	world.AddComponent(entityID, &domain.WeaponGroup{
 		Weapons: weaponsList,
 	})
-
-	// Save custom stats for armor (stub for ArmorGrid)
-	_ = maxArmor
 
 	return nil
 }

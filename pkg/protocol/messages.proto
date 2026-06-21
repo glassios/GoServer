@@ -135,6 +135,15 @@ message EntitySnapshot {
   int32 qty_energy_coils = 35;
   int32 qty_laser_cannon = 36;
   int32 qty_mining_laser = 37;
+  // Phase 1 Starsector combat fields
+  int32 armor = 38;
+  int32 max_armor = 39;
+  int32 flux = 40;
+  int32 max_flux = 41;
+  bool overloaded = 42;
+  bool venting = 43;
+  string last_damage_type = 44; // type of the most recent damage taken (client damage-number color)
+  int32 shots_fired = 45;       // weapon mounts that fired this tick (beam intensity)
 }
 
 message WorldSnapshot {

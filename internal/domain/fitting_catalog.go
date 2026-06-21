@@ -209,6 +209,92 @@ func HullmodByID(modID string) *Hullmod {
 	return nil
 }
 
+// BakedStats are the flat, combat-ready stats derived from a ShipConfiguration (hull + mods +
+// weapons + vents/capacitors). Computed purely from the in-code catalog — no repository needed —
+// so the combat instance can bake ships in both DB and DB-less modes. Mirrors the math in
+// systems.BakeShip (the repository-backed path used by the hangar/DB).
+type BakedStats struct {
+	MaxHP            float32
+	MaxArmor         float32
+	MaxShield        float32
+	ShieldType       string
+	ShieldArc        float32
+	ShieldEfficiency float32
+	MaxSpeed         float32
+	TurnRate         float32
+	MaxFlux          float32
+	FluxDissipation  float32
+	Weapons          []FittedWeaponState
+}
+
+// ComputeStats resolves a ShipConfiguration into BakedStats using the code catalog.
+func ComputeStats(cfg *ShipConfiguration) BakedStats {
+	hull := cfg.Hull
+	if hull == nil {
+		hull = HullByNumericID(cfg.HullID)
+	}
+	if hull == nil {
+		hull = HullByStringID("fighter")
+	}
+
+	speedMult, turnMult, armorMult := float32(1), float32(1), float32(1)
+	shieldCapMult, shieldEffMult := float32(1), float32(1)
+	maxFluxMult, fluxDissMult := float32(1), float32(1)
+	for _, modID := range cfg.FittedHullmods {
+		m := HullmodByID(modID)
+		if m == nil {
+			continue
+		}
+		if v, ok := m.Modifiers["max_speed_mult"]; ok {
+			speedMult *= v
+		}
+		if v, ok := m.Modifiers["turn_rate_mult"]; ok {
+			turnMult *= v
+		}
+		if v, ok := m.Modifiers["armor_mult"]; ok {
+			armorMult *= v
+		}
+		if v, ok := m.Modifiers["shield_max_mult"]; ok {
+			shieldCapMult *= v
+		}
+		if v, ok := m.Modifiers["shield_efficiency_mult"]; ok {
+			shieldEffMult *= v
+		}
+		if v, ok := m.Modifiers["max_flux_mult"]; ok {
+			maxFluxMult *= v
+		}
+		if v, ok := m.Modifiers["flux_dissipation_mult"]; ok {
+			fluxDissMult *= v
+		}
+	}
+
+	eff := hull.ShieldEfficiency * shieldEffMult
+	if eff <= 0 {
+		eff = 1.0
+	}
+
+	stats := BakedStats{
+		MaxHP:            hull.BaseHP,
+		MaxArmor:         hull.BaseArmor * armorMult,
+		MaxShield:        hull.BaseShieldMax * shieldCapMult,
+		ShieldType:       hull.ShieldType,
+		ShieldArc:        hull.ShieldArc,
+		ShieldEfficiency: eff,
+		MaxSpeed:         hull.BaseMaxSpeed * speedMult,
+		TurnRate:         hull.BaseTurnRate * turnMult,
+		MaxFlux:          (hull.BaseHP*10 + float32(cfg.Capacitors)*200.0) * maxFluxMult,
+		FluxDissipation:  (float32(hull.OrdnancePoints)/2.0 + float32(cfg.Vents)*10.0) * fluxDissMult,
+	}
+	for _, slot := range hull.WeaponSlots {
+		if wid, ok := cfg.FittedWeapons[slot.SlotID]; ok {
+			if def := WeaponByID(wid); def != nil {
+				stats.Weapons = append(stats.Weapons, FittedWeaponState{SlotID: slot.SlotID, Definition: *def, Cooldown: 0, Ammo: 9999})
+			}
+		}
+	}
+	return stats
+}
+
 // defaultWeaponForSlot picks a sensible stock weapon for a slot's size + mount type.
 func defaultWeaponForSlot(slot WeaponSlot) string {
 	switch slot.Size {

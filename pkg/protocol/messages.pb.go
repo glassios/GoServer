@@ -746,8 +746,17 @@ type EntitySnapshot struct {
 	QtyEnergyCoils    int32                  `protobuf:"varint,35,opt,name=qty_energy_coils,json=qtyEnergyCoils,proto3" json:"qty_energy_coils,omitempty"`
 	QtyLaserCannon    int32                  `protobuf:"varint,36,opt,name=qty_laser_cannon,json=qtyLaserCannon,proto3" json:"qty_laser_cannon,omitempty"`
 	QtyMiningLaser    int32                  `protobuf:"varint,37,opt,name=qty_mining_laser,json=qtyMiningLaser,proto3" json:"qty_mining_laser,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Phase 1 Starsector combat fields
+	Armor          int32  `protobuf:"varint,38,opt,name=armor,proto3" json:"armor,omitempty"`
+	MaxArmor       int32  `protobuf:"varint,39,opt,name=max_armor,json=maxArmor,proto3" json:"max_armor,omitempty"`
+	Flux           int32  `protobuf:"varint,40,opt,name=flux,proto3" json:"flux,omitempty"`
+	MaxFlux        int32  `protobuf:"varint,41,opt,name=max_flux,json=maxFlux,proto3" json:"max_flux,omitempty"`
+	Overloaded     bool   `protobuf:"varint,42,opt,name=overloaded,proto3" json:"overloaded,omitempty"`
+	Venting        bool   `protobuf:"varint,43,opt,name=venting,proto3" json:"venting,omitempty"`
+	LastDamageType string `protobuf:"bytes,44,opt,name=last_damage_type,json=lastDamageType,proto3" json:"last_damage_type,omitempty"` // type of the most recent damage taken (client damage-number color)
+	ShotsFired     int32  `protobuf:"varint,45,opt,name=shots_fired,json=shotsFired,proto3" json:"shots_fired,omitempty"`              // weapon mounts that fired this tick (beam intensity)
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *EntitySnapshot) Reset() {
@@ -1035,6 +1044,62 @@ func (x *EntitySnapshot) GetQtyLaserCannon() int32 {
 func (x *EntitySnapshot) GetQtyMiningLaser() int32 {
 	if x != nil {
 		return x.QtyMiningLaser
+	}
+	return 0
+}
+
+func (x *EntitySnapshot) GetArmor() int32 {
+	if x != nil {
+		return x.Armor
+	}
+	return 0
+}
+
+func (x *EntitySnapshot) GetMaxArmor() int32 {
+	if x != nil {
+		return x.MaxArmor
+	}
+	return 0
+}
+
+func (x *EntitySnapshot) GetFlux() int32 {
+	if x != nil {
+		return x.Flux
+	}
+	return 0
+}
+
+func (x *EntitySnapshot) GetMaxFlux() int32 {
+	if x != nil {
+		return x.MaxFlux
+	}
+	return 0
+}
+
+func (x *EntitySnapshot) GetOverloaded() bool {
+	if x != nil {
+		return x.Overloaded
+	}
+	return false
+}
+
+func (x *EntitySnapshot) GetVenting() bool {
+	if x != nil {
+		return x.Venting
+	}
+	return false
+}
+
+func (x *EntitySnapshot) GetLastDamageType() string {
+	if x != nil {
+		return x.LastDamageType
+	}
+	return ""
+}
+
+func (x *EntitySnapshot) GetShotsFired() int32 {
+	if x != nil {
+		return x.ShotsFired
 	}
 	return 0
 }
@@ -2754,7 +2819,7 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
 	"\rsession_token\x18\x02 \x01(\tR\fsessionToken\x12\x1b\n" +
 	"\tentity_id\x18\x03 \x01(\x04R\bentityId\x12#\n" +
-	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\"\x9a\t\n" +
+	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\"\x81\v\n" +
 	"\x0eEntitySnapshot\x12\x1b\n" +
 	"\tentity_id\x18\x01 \x01(\x04R\bentityId\x12\x1f\n" +
 	"\ventity_type\x18\x02 \x01(\rR\n" +
@@ -2800,7 +2865,18 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"\x0eqty_microchips\x18\" \x01(\x05R\rqtyMicrochips\x12(\n" +
 	"\x10qty_energy_coils\x18# \x01(\x05R\x0eqtyEnergyCoils\x12(\n" +
 	"\x10qty_laser_cannon\x18$ \x01(\x05R\x0eqtyLaserCannon\x12(\n" +
-	"\x10qty_mining_laser\x18% \x01(\x05R\x0eqtyMiningLaser\"Y\n" +
+	"\x10qty_mining_laser\x18% \x01(\x05R\x0eqtyMiningLaser\x12\x14\n" +
+	"\x05armor\x18& \x01(\x05R\x05armor\x12\x1b\n" +
+	"\tmax_armor\x18' \x01(\x05R\bmaxArmor\x12\x12\n" +
+	"\x04flux\x18( \x01(\x05R\x04flux\x12\x19\n" +
+	"\bmax_flux\x18) \x01(\x05R\amaxFlux\x12\x1e\n" +
+	"\n" +
+	"overloaded\x18* \x01(\bR\n" +
+	"overloaded\x12\x18\n" +
+	"\aventing\x18+ \x01(\bR\aventing\x12(\n" +
+	"\x10last_damage_type\x18, \x01(\tR\x0elastDamageType\x12\x1f\n" +
+	"\vshots_fired\x18- \x01(\x05R\n" +
+	"shotsFired\"Y\n" +
 	"\rWorldSnapshot\x12\x12\n" +
 	"\x04tick\x18\x01 \x01(\x04R\x04tick\x124\n" +
 	"\bentities\x18\x02 \x03(\v2\x18.protocol.EntitySnapshotR\bentities\"\x97\x01\n" +

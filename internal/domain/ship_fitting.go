@@ -76,6 +76,60 @@ type FluxState struct {
 	Current         float32
 	Capacity        float32
 	DissipationRate float32
+	Overloaded      bool // true while at max flux: shield drops and weapons can't fire until vented
+	Venting         bool // true while actively venting (fast flux dump, can't fire)
+}
+
+// Damage types (Starsector-style).
+const (
+	DamageKinetic   = "KINETIC"
+	DamageExplosive = "EXPLOSIVE"
+	DamageEnergy    = "ENERGY"
+	DamageFrag      = "FRAGMENTATION"
+)
+
+// Damage layers.
+const (
+	LayerShield = "shield"
+	LayerArmor  = "armor"
+	LayerHull   = "hull"
+)
+
+// DamageMultiplier returns the Starsector-style multiplier for a damage type against a
+// given defensive layer. Kinetic shreds shields but is weak vs armor; explosive is the
+// inverse; energy is neutral; fragmentation is strong vs hull but poor vs shields/armor.
+func DamageMultiplier(damageType, layer string) float32 {
+	switch damageType {
+	case DamageKinetic:
+		switch layer {
+		case LayerShield:
+			return 2.0
+		case LayerArmor:
+			return 0.5
+		default:
+			return 1.0
+		}
+	case DamageExplosive:
+		switch layer {
+		case LayerShield:
+			return 0.5
+		case LayerArmor:
+			return 2.0
+		default:
+			return 1.0
+		}
+	case DamageFrag:
+		switch layer {
+		case LayerShield:
+			return 0.25
+		case LayerArmor:
+			return 0.25
+		default:
+			return 1.0
+		}
+	default: // ENERGY and anything unspecified: neutral
+		return 1.0
+	}
 }
 
 type FittedWeaponState struct {

@@ -8,15 +8,20 @@ import (
 	"github.com/Home/galaxy-mmo/internal/ecs"
 )
 
+// CombatSystem implements the Phase 1 Starsector-style core combat sim:
+//   - per-mount weapon groups (WeaponGroup) instead of a single weapon
+//   - a flux economy (firing builds flux; overload drops shields & stops fire; venting clears it)
+//   - layered damage (shield → armor → hull) with damage-type multipliers
+//   - shield/flux dissipation and shield regeneration each tick
+//
+// The single Weapon component remains as the AI's targeting controller (AISystem sets
+// Active/TargetID and uses Range for standoff); actual damage comes from WeaponGroup mounts.
 type CombatSystem struct {
-	eventBus        domain.EventBus
-	accumulatedTime float64
+	eventBus domain.EventBus
 }
 
 func NewCombatSystem(eventBus domain.EventBus) *CombatSystem {
-	return &CombatSystem{
-		eventBus: eventBus,
-	}
+	return &CombatSystem{eventBus: eventBus}
 }
 
 func (s *CombatSystem) Name() string {
@@ -24,146 +29,270 @@ func (s *CombatSystem) Name() string {
 }
 
 func (s *CombatSystem) Priority() int {
-	return 80 // Executed after movement
+	return 80 // Executed after movement/AI
 }
 
 func (s *CombatSystem) Update(world *ecs.World, dt float64) {
-	s.accumulatedTime += dt
+	dtf := float32(dt)
 
-	mask := ecs.BuildMask(domain.Transform{}, domain.Weapon{})
-	entities := world.Query(mask)
-
-	// Reset IsFiring for all weapons
-	for _, attackerID := range entities {
-		if wVal, ok := world.GetComponent(attackerID, domain.Weapon{}); ok {
+	// Pass 1: per-tick upkeep on every combat ship — flux dissipation/venting, shield up/down,
+	// shield regen — and reset transient fire flags.
+	for _, id := range world.Query(ecs.BuildMask(domain.FluxState{})) {
+		s.upkeep(world, id, dtf)
+	}
+	for _, id := range world.Query(ecs.BuildMask(domain.CombatFx{})) {
+		if fxVal, ok := world.GetComponent(id, domain.CombatFx{}); ok {
+			fxVal.(*domain.CombatFx).ShotsFired = 0
+		}
+	}
+	for _, id := range world.Query(ecs.BuildMask(domain.Weapon{})) {
+		if wVal, ok := world.GetComponent(id, domain.Weapon{}); ok {
 			wVal.(*domain.Weapon).IsFiring = false
 		}
 	}
 
-	for _, attackerID := range entities {
-		wVal, foundW := world.GetComponent(attackerID, domain.Weapon{})
-		tVal, foundT := world.GetComponent(attackerID, domain.Transform{})
-		if !foundW || !foundT {
-			continue
-		}
+	// Pass 2: firing — only ships with a weapon group inside a combat instance (CombatTeam).
+	for _, attackerID := range world.Query(ecs.BuildMask(domain.Transform{}, domain.WeaponGroup{}, domain.CombatTeam{})) {
+		s.fire(world, attackerID, dtf)
+	}
+}
 
-		weapon := wVal.(*domain.Weapon)
-		attackerTrans := tVal.(*domain.Transform)
+// upkeep dissipates flux, manages overload/venting, drops/raises the shield and regenerates it.
+func (s *CombatSystem) upkeep(world *ecs.World, id domain.EntityID, dtf float32) {
+	fluxVal, ok := world.GetComponent(id, domain.FluxState{})
+	if !ok {
+		return
+	}
+	flux := fluxVal.(*domain.FluxState)
 
-		if !weapon.Active {
-			continue
-		}
+	// Once overloaded, force a vent until flux is fully cleared.
+	if flux.Overloaded {
+		flux.Venting = true
+	}
+	rate := flux.DissipationRate
+	if flux.Venting {
+		rate *= 3.0 // venting dumps flux quickly but the ship can't fire meanwhile
+	}
+	flux.Current -= rate * dtf
+	if flux.Current <= 0 {
+		flux.Current = 0
+		flux.Overloaded = false
+		flux.Venting = false
+	}
 
-		// Combat only allowed in instanced combat arenas where participants have a CombatTeam component.
-		// On the main map, combat is disabled and fleets only approach/pursue without firing.
-		if _, hasTeam := world.GetComponent(attackerID, domain.CombatTeam{}); !hasTeam {
-			continue
-		}
-
-		// Check cooldown
-		if s.accumulatedTime-weapon.LastFire < float64(weapon.Cooldown) {
-			continue
-		}
-
-		targetID := weapon.TargetID
-		// Check target existence
-		targetType, exists := world.GetEntityType(targetID)
-		if !exists {
-			weapon.Active = false
-			continue
-		}
-
-		// Get target components
-		targetTVal, foundTargetT := world.GetComponent(targetID, domain.Transform{})
-		targetHVal, foundTargetH := world.GetComponent(targetID, domain.Health{})
-		if !foundTargetT || !foundTargetH {
-			weapon.Active = false
-			continue
-		}
-
-		targetTrans := targetTVal.(*domain.Transform)
-		targetHealth := targetHVal.(*domain.Health)
-
-		if targetHealth.Current <= 0 {
-			weapon.Active = false
-			continue
-		}
-
-		// Prevent friendly fire if teams are defined
-		attackerTeamVal, attackerHasTeam := world.GetComponent(attackerID, domain.CombatTeam{})
-		targetTeamVal, targetHasTeam := world.GetComponent(targetID, domain.CombatTeam{})
-		if attackerHasTeam && targetHasTeam {
-			attackerTeam := attackerTeamVal.(*domain.CombatTeam)
-			targetTeam := targetTeamVal.(*domain.CombatTeam)
-			if attackerTeam.TeamID == targetTeam.TeamID {
-				weapon.Active = false
-				continue
-			}
-		}
-
-		// Range check
-		dx := attackerTrans.X - targetTrans.X
-		dy := attackerTrans.Y - targetTrans.Y
-		dist := float32(math.Sqrt(float64(dx*dx + dy*dy)))
-
-		if dist > weapon.Range {
-			continue // Out of range, keep active but don't shoot yet
-		}
-
-		// Perform Attack
-		weapon.LastFire = s.accumulatedTime
-		weapon.IsFiring = true
-
-		damage := weapon.Damage
-		if damage <= 0 {
-			continue // Защита от нулевого/отрицательного урона (иначе щит бы "лечился")
-		}
-		shieldVal, foundShield := world.GetComponent(targetID, domain.Shield{})
-
-		// Damage absorption
-		if foundShield {
-			shield := shieldVal.(*domain.Shield)
-			if shield.Current > 0 {
-				if shield.Current >= damage {
-					shield.Current -= damage
-					damage = 0
-				} else {
-					damage -= shield.Current
-					shield.Current = 0
+	if sVal, ok := world.GetComponent(id, domain.Shield{}); ok {
+		sh := sVal.(*domain.Shield)
+		// Shield is down while overloaded or venting.
+		sh.Down = flux.Overloaded || flux.Venting
+		if !sh.Down && sh.Current < sh.Max && sh.RegenRate > 0 {
+			sh.RegenAcc += sh.RegenRate * dtf
+			if whole := int32(sh.RegenAcc); whole > 0 {
+				sh.Current += whole
+				sh.RegenAcc -= float32(whole)
+				if sh.Current > sh.Max {
+					sh.Current = sh.Max
+					sh.RegenAcc = 0
 				}
 			}
 		}
+	}
+}
 
-		if damage > 0 {
-			targetHealth.Current -= damage
-			if targetHealth.Current < 0 {
-				targetHealth.Current = 0
+// fire advances mount cooldowns and discharges every ready, in-range mount at the controller's target.
+func (s *CombatSystem) fire(world *ecs.World, attackerID domain.EntityID, dtf float32) {
+	wgVal, _ := world.GetComponent(attackerID, domain.WeaponGroup{})
+	wg := wgVal.(*domain.WeaponGroup)
+
+	// Advance mount cooldowns regardless of whether we end up firing.
+	for i := range wg.Weapons {
+		if wg.Weapons[i].Cooldown > 0 {
+			wg.Weapons[i].Cooldown -= dtf
+		}
+	}
+
+	// Targeting controller (set by AISystem).
+	wVal, hasWeapon := world.GetComponent(attackerID, domain.Weapon{})
+	if !hasWeapon {
+		return
+	}
+	weapon := wVal.(*domain.Weapon)
+	if !weapon.Active || weapon.TargetID == 0 {
+		return
+	}
+
+	targetID := weapon.TargetID
+	targetType, exists := world.GetEntityType(targetID)
+	if !exists {
+		weapon.Active = false
+		return
+	}
+	targetTVal, okT := world.GetComponent(targetID, domain.Transform{})
+	targetHVal, okH := world.GetComponent(targetID, domain.Health{})
+	if !okT || !okH {
+		weapon.Active = false
+		return
+	}
+	targetHealth := targetHVal.(*domain.Health)
+	if targetHealth.Current <= 0 {
+		weapon.Active = false
+		return
+	}
+
+	// No friendly fire within a team.
+	if at, ok := world.GetComponent(attackerID, domain.CombatTeam{}); ok {
+		if tt, ok2 := world.GetComponent(targetID, domain.CombatTeam{}); ok2 {
+			if at.(*domain.CombatTeam).TeamID == tt.(*domain.CombatTeam).TeamID {
+				weapon.Active = false
+				return
 			}
 		}
+	}
 
-		isKilled := targetHealth.Current <= 0
+	// A ship that is overloaded or venting cannot fire.
+	var aflux *domain.FluxState
+	if fVal, ok := world.GetComponent(attackerID, domain.FluxState{}); ok {
+		aflux = fVal.(*domain.FluxState)
+		if aflux.Overloaded || aflux.Venting {
+			return
+		}
+	}
 
-		// Publish event
+	aTVal, _ := world.GetComponent(attackerID, domain.Transform{})
+	atrans := aTVal.(*domain.Transform)
+	ttrans := targetTVal.(*domain.Transform)
+	dx := atrans.X - ttrans.X
+	dy := atrans.Y - ttrans.Y
+	dist := float32(math.Sqrt(float64(dx*dx + dy*dy)))
+
+	fired := 0
+	for i := range wg.Weapons {
+		m := &wg.Weapons[i]
+		if m.Cooldown > 0 || dist > m.Definition.Range {
+			continue
+		}
+		// Flux headroom check; running out triggers an overload.
+		if aflux != nil && aflux.Current+m.Definition.FluxCost > aflux.Capacity {
+			aflux.Current = aflux.Capacity
+			aflux.Overloaded = true
+			break
+		}
+		m.Cooldown = m.Definition.Cooldown
+		if aflux != nil {
+			aflux.Current += m.Definition.FluxCost
+			if aflux.Current >= aflux.Capacity {
+				aflux.Current = aflux.Capacity
+				aflux.Overloaded = true
+			}
+		}
+		fired++
+
+		killed := s.applyDamage(world, targetID, m.Definition.DamagePerShot, m.Definition.DamageType)
 		if s.eventBus != nil {
 			s.eventBus.Publish(domain.DamageDealtEvent{
-				BaseEvent: domain.BaseEvent{
-					Time: time.Now(),
-				},
+				BaseEvent:  domain.BaseEvent{Time: time.Now()},
 				AttackerID: attackerID,
 				TargetID:   targetID,
-				Damage:     weapon.Damage,
-				IsKilled:   isKilled,
+				Damage:     int32(m.Definition.DamagePerShot),
+				IsKilled:   killed,
 			})
-
-			if isKilled {
+		}
+		if killed {
+			if s.eventBus != nil {
 				s.eventBus.Publish(domain.EntityDestroyedEvent{
-					BaseEvent: domain.BaseEvent{
-						Time: time.Now(),
-					},
+					BaseEvent:  domain.BaseEvent{Time: time.Now()},
 					EntityID:   targetID,
 					EntityType: targetType,
 				})
 			}
+			weapon.Active = false
+			break
+		}
+	}
+
+	if fired > 0 {
+		weapon.IsFiring = true
+		if fxVal, ok := world.GetComponent(attackerID, domain.CombatFx{}); ok {
+			fxVal.(*domain.CombatFx).ShotsFired = int32(fired)
+		}
+	}
+}
+
+// applyDamage runs one shot through the shield → armor → hull layers with damage-type
+// multipliers, raising the defender's flux for damage its shield absorbs. Returns true if the
+// shot killed the target.
+func (s *CombatSystem) applyDamage(world *ecs.World, targetID domain.EntityID, dmg float32, dtype string) bool {
+	if dmg <= 0 {
+		return false
+	}
+	if fxVal, ok := world.GetComponent(targetID, domain.CombatFx{}); ok {
+		fxVal.(*domain.CombatFx).LastDamageType = dtype
+	}
+
+	remaining := dmg
+
+	// 1. Shields (if raised and charged): absorb the shot and convert absorbed damage to flux.
+	if sVal, ok := world.GetComponent(targetID, domain.Shield{}); ok {
+		sh := sVal.(*domain.Shield)
+		if !sh.Down && sh.Current > 0 {
+			eff := sh.Efficiency
+			if eff <= 0 {
+				eff = 1.0
+			}
+			sd := remaining * domain.DamageMultiplier(dtype, domain.LayerShield)
+			if sd <= float32(sh.Current) {
+				sh.Current -= int32(sd)
+				s.raiseFlux(world, targetID, sd*eff)
+				return false // shot fully stopped by shields
+			}
+			// Shield breaks mid-shot: it absorbs a fraction, the rest bleeds through.
+			absorbedFrac := float32(sh.Current) / sd
+			s.raiseFlux(world, targetID, float32(sh.Current)*eff)
+			sh.Current = 0
+			remaining *= (1 - absorbedFrac)
+		}
+	}
+
+	// 2. Armor.
+	if remaining > 0 {
+		if aVal, ok := world.GetComponent(targetID, domain.ArmorGrid{}); ok {
+			ar := aVal.(*domain.ArmorGrid)
+			if ar.Current > 0 {
+				ad := remaining * domain.DamageMultiplier(dtype, domain.LayerArmor)
+				if ad <= ar.Current {
+					ar.Current -= ad
+					return false
+				}
+				absorbedFrac := ar.Current / ad
+				ar.Current = 0
+				remaining *= (1 - absorbedFrac)
+			}
+		}
+	}
+
+	// 3. Hull.
+	if remaining > 0 {
+		if hVal, ok := world.GetComponent(targetID, domain.Health{}); ok {
+			h := hVal.(*domain.Health)
+			h.Current -= int32(remaining * domain.DamageMultiplier(dtype, domain.LayerHull))
+			if h.Current <= 0 {
+				h.Current = 0
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (s *CombatSystem) raiseFlux(world *ecs.World, id domain.EntityID, amount float32) {
+	if amount <= 0 {
+		return
+	}
+	if fVal, ok := world.GetComponent(id, domain.FluxState{}); ok {
+		flux := fVal.(*domain.FluxState)
+		flux.Current += amount
+		if flux.Current >= flux.Capacity {
+			flux.Current = flux.Capacity
+			flux.Overloaded = true
 		}
 	}
 }

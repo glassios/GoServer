@@ -571,6 +571,26 @@
                     <div class="progress-bar-fill shield" id="player-sh-bar" style="width: 0%;"></div>
                 </div>
             </div>
+
+            <div style="margin-top: 4px; display: none;" id="player-armor-sec">
+                <div style="display: flex; justify-content: space-between; font-size: 0.7rem;">
+                    <span>ARMOR</span>
+                    <span id="player-armor-label">0/0</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar-fill" id="player-armor-bar" style="background: #c8a24a; width: 0%;"></div>
+                </div>
+            </div>
+
+            <div style="margin-top: 4px; display: none;" id="player-flux-sec">
+                <div style="display: flex; justify-content: space-between; font-size: 0.7rem;">
+                    <span id="player-flux-title">FLUX</span>
+                    <span id="player-flux-label">0/0</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar-fill" id="player-flux-bar" style="background: #b061ff; width: 0%;"></div>
+                </div>
+            </div>
         </div>
 
         <div id="target-panel">
@@ -596,6 +616,26 @@
                 </div>
                 <div class="progress-bar-container">
                     <div class="progress-bar-fill shield" id="target-shield-bar"></div>
+                </div>
+            </div>
+
+            <div style="margin-top: 4px; display: none;" id="target-armor-sec">
+                <div style="display: flex; justify-content: space-between; font-size: 0.7rem;">
+                    <span>Armor</span>
+                    <span id="target-armor-label">0/0</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar-fill" id="target-armor-bar" style="background: #c8a24a; width: 0%;"></div>
+                </div>
+            </div>
+
+            <div style="margin-top: 4px; display: none;" id="target-flux-sec">
+                <div style="display: flex; justify-content: space-between; font-size: 0.7rem;">
+                    <span id="target-flux-title">Flux</span>
+                    <span id="target-flux-label">0/0</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar-fill" id="target-flux-bar" style="background: #b061ff; width: 0%;"></div>
                 </div>
             </div>
 
@@ -1007,8 +1047,9 @@
                 
                 // Track HP/Shield drops for Damage Floaters
                 if (ent.hp < old.hp) {
-                    createDamageFloat(ent.x, ent.y, `-${old.hp - ent.hp} HP`, '#ff5555');
-                    createSparks(ent.x, ent.y, '#ff3333');
+                    const dmgColor = damageTypeColor(ent.last_damage_type);
+                    createDamageFloat(ent.x, ent.y, `-${old.hp - ent.hp} HP`, dmgColor);
+                    createSparks(ent.x, ent.y, dmgColor);
                     if (id === localPlayerID) {
                         logEvent(`Ваш корабль получил урон: -${old.hp - ent.hp} HP`, 'combat');
                     }
@@ -1037,6 +1078,14 @@
                     maxHp: ent.max_hp,
                     shield: ent.shield,
                     maxShield: ent.max_shield,
+                    armor: ent.armor || 0,
+                    maxArmor: ent.max_armor || 0,
+                    flux: ent.flux || 0,
+                    maxFlux: ent.max_flux || 0,
+                    overloaded: ent.overloaded || false,
+                    venting: ent.venting || false,
+                    shotsFired: ent.shots_fired || 0,
+                    lastDamageType: ent.last_damage_type || '',
                     factionId: ent.faction_id,
                     corpId: ent.corp_id,
                     targetEntityId: ent.target_id ? Number(ent.target_id) : 0,
@@ -1079,6 +1128,14 @@
                     maxHp: ent.max_hp,
                     shield: ent.shield,
                     maxShield: ent.max_shield,
+                    armor: ent.armor || 0,
+                    maxArmor: ent.max_armor || 0,
+                    flux: ent.flux || 0,
+                    maxFlux: ent.max_flux || 0,
+                    overloaded: ent.overloaded || false,
+                    venting: ent.venting || false,
+                    shotsFired: ent.shots_fired || 0,
+                    lastDamageType: ent.last_damage_type || '',
                     factionId: ent.faction_id,
                     corpId: ent.corp_id,
                     targetEntityId: ent.target_id ? Number(ent.target_id) : 0,
@@ -1206,6 +1263,35 @@
                     document.getElementById('player-sh-bar').style.width = Math.max(0, Math.min(100, shieldPct)) + '%';
                 } else {
                     shSec.style.display = 'none';
+                }
+
+                // ARMOR
+                const maxArmor = p.maxArmor || 0;
+                const armorSec = document.getElementById('player-armor-sec');
+                if (maxArmor > 0) {
+                    armorSec.style.display = 'block';
+                    const armor = p.armor || 0;
+                    document.getElementById('player-armor-label').textContent = `${armor}/${maxArmor}`;
+                    document.getElementById('player-armor-bar').style.width = Math.max(0, Math.min(100, (armor / maxArmor) * 100)) + '%';
+                } else {
+                    armorSec.style.display = 'none';
+                }
+
+                // FLUX
+                const maxFlux = p.maxFlux || 0;
+                const fluxSec = document.getElementById('player-flux-sec');
+                if (maxFlux > 0) {
+                    fluxSec.style.display = 'block';
+                    const flux = p.flux || 0;
+                    document.getElementById('player-flux-label').textContent = `${flux}/${maxFlux}`;
+                    const fluxBar = document.getElementById('player-flux-bar');
+                    fluxBar.style.width = Math.max(0, Math.min(100, (flux / maxFlux) * 100)) + '%';
+                    // Color shifts toward red as flux rises; flag overload/vent in the title.
+                    fluxBar.style.background = p.overloaded ? '#ff3b3b' : (flux / maxFlux > 0.75 ? '#ff8c3a' : '#b061ff');
+                    document.getElementById('player-flux-title').textContent =
+                        p.overloaded ? 'FLUX — OVERLOAD' : (p.venting ? 'FLUX — VENTING' : 'FLUX');
+                } else {
+                    fluxSec.style.display = 'none';
                 }
             }
         } else {
@@ -1689,6 +1775,30 @@
             document.getElementById('target-shield-sec').style.display = 'none';
         }
 
+        // Armor bar
+        const tArmorSec = document.getElementById('target-armor-sec');
+        if (ent.maxArmor > 0) {
+            tArmorSec.style.display = 'block';
+            document.getElementById('target-armor-label').textContent = `${ent.armor}/${ent.maxArmor}`;
+            document.getElementById('target-armor-bar').style.width = Math.max(0, Math.min(100, (ent.armor / ent.maxArmor) * 100)) + '%';
+        } else {
+            tArmorSec.style.display = 'none';
+        }
+
+        // Flux bar
+        const tFluxSec = document.getElementById('target-flux-sec');
+        if (ent.maxFlux > 0) {
+            tFluxSec.style.display = 'block';
+            document.getElementById('target-flux-label').textContent = `${ent.flux}/${ent.maxFlux}`;
+            const tFluxBar = document.getElementById('target-flux-bar');
+            tFluxBar.style.width = Math.max(0, Math.min(100, (ent.flux / ent.maxFlux) * 100)) + '%';
+            tFluxBar.style.background = ent.overloaded ? '#ff3b3b' : ((ent.flux / ent.maxFlux) > 0.75 ? '#ff8c3a' : '#b061ff');
+            document.getElementById('target-flux-title').textContent =
+                ent.overloaded ? 'Flux — OVERLOAD' : (ent.venting ? 'Flux — VENTING' : 'Flux');
+        } else {
+            tFluxSec.style.display = 'none';
+        }
+
         // Cargo occupancy progress bar & details
         const cargoSec = document.getElementById('target-cargo-sec');
         const targetDetailsDiv = document.getElementById('target-cargo-details');
@@ -1908,6 +2018,17 @@
     // Visual effects helpers
     function createDamageFloat(x, y, text, color) {
         damageNumbers.push(new DamageNumber(x, y - 20, text, color));
+    }
+
+    // Color for floating damage numbers by Starsector damage type.
+    function damageTypeColor(t) {
+        switch (t) {
+            case 'KINETIC':       return '#9fd0ff'; // pale blue — strong vs shields
+            case 'EXPLOSIVE':     return '#ff8c3a'; // orange — strong vs armor
+            case 'ENERGY':        return '#42f5b3'; // teal-green — neutral
+            case 'FRAGMENTATION': return '#fff07a'; // yellow — anti-hull
+            default:              return '#ff5555'; // generic red
+        }
     }
 
     // Sparks when hit
@@ -2206,6 +2327,7 @@
                 let shotElapsed = Date.now() - (ent.lastShotTime || 0);
                 if (ent.isShooting) {
                     ent.lastShotTime = Date.now();
+                    ent.lastShotCount = ent.shotsFired || 1;
                     shotElapsed = 0;
                 }
 
@@ -2216,16 +2338,18 @@
                         beamColor = getTeamColor(ent.factionId);
                         innerColor = '#ffffff';
                     }
-                    
+
                     let opacity = 1.0 - shotElapsed / 150.0;
-                    
+                    // More mounts firing this volley → thicker beam.
+                    let mounts = Math.max(1, ent.lastShotCount || 1);
+
                     ctx.save();
                     ctx.shadowBlur = 12;
                     ctx.shadowColor = beamColor;
-                    
+
                     ctx.strokeStyle = beamColor;
                     ctx.globalAlpha = 0.4 * opacity;
-                    ctx.lineWidth = 4;
+                    ctx.lineWidth = 4 + (mounts - 1) * 2;
                     ctx.beginPath();
                     ctx.moveTo(ent.currX, ent.currY);
                     ctx.lineTo(target.currX, target.currY);
@@ -2233,7 +2357,7 @@
 
                     ctx.globalAlpha = 1.0 * opacity;
                     ctx.strokeStyle = innerColor;
-                    ctx.lineWidth = 1.5;
+                    ctx.lineWidth = 1.5 + (mounts - 1) * 0.6;
                     ctx.beginPath();
                     ctx.moveTo(ent.currX, ent.currY);
                     ctx.lineTo(target.currX, target.currY);
@@ -2399,9 +2523,27 @@
                 // Shield
                 if (ent.maxShield > 0) {
                     let shWidth = (ent.shield / ent.maxShield) * width;
-                    ctx.fillStyle = 'var(--accent-cyan)';
+                    ctx.fillStyle = '#00f2fe';
                     ctx.fillRect(rx, ry + 3, shWidth, height - 1);
                 }
+
+                // Flux (thin bar beneath shield/HP)
+                if (ent.maxFlux > 0) {
+                    let fluxWidth = (ent.flux / ent.maxFlux) * width;
+                    ctx.fillStyle = ent.overloaded ? '#ff3b3b' : '#b061ff';
+                    ctx.fillRect(rx, ry + 5, fluxWidth, 1.5);
+                }
+            }
+
+            // Overload / venting ring around the ship
+            if (ent.overloaded || ent.venting) {
+                ctx.strokeStyle = ent.overloaded ? 'rgba(255,59,59,0.85)' : 'rgba(176,97,255,0.8)';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash(ent.venting && !ent.overloaded ? [3, 3] : []);
+                ctx.beginPath();
+                ctx.arc(0, 0, getEntityRadius(ent) + 4, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.setLineDash([]);
             }
         }
 

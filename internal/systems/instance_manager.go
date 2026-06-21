@@ -583,6 +583,23 @@ func BuildCombatEntitySnapshot(world *ecs.World, id domain.EntityID) *protocol.E
 		snap.Shield = s.Current
 		snap.MaxShield = s.Max
 	}
+	if aVal, ok := world.GetComponent(id, domain.ArmorGrid{}); ok {
+		a := aVal.(*domain.ArmorGrid)
+		snap.Armor = int32(a.Current)
+		snap.MaxArmor = int32(a.Max)
+	}
+	if fVal, ok := world.GetComponent(id, domain.FluxState{}); ok {
+		f := fVal.(*domain.FluxState)
+		snap.Flux = int32(f.Current)
+		snap.MaxFlux = int32(f.Capacity)
+		snap.Overloaded = f.Overloaded
+		snap.Venting = f.Venting
+	}
+	if fxVal, ok := world.GetComponent(id, domain.CombatFx{}); ok {
+		fx := fxVal.(*domain.CombatFx)
+		snap.ShotsFired = fx.ShotsFired
+		snap.LastDamageType = fx.LastDamageType
+	}
 	if cfgVal, ok := world.GetComponent(id, domain.ShipConfig{}); ok {
 		cfg := cfgVal.(*domain.ShipConfig)
 		snap.ShipType = cfg.ShipType

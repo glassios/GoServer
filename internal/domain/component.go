@@ -53,7 +53,29 @@ type Health struct {
 type Shield struct {
 	Current   int32
 	Max       int32
-	RegenRate float32
+	RegenRate float32 // points restored per second while raised
+
+	// Starsector-style fields (Phase 1). Defaults are backwards-compatible:
+	// Down=false means the shield is raised; an empty Type behaves like "omni".
+	Type       string  // "front", "omni", "none"
+	Arc        float32 // covered arc in degrees (used for directional shields)
+	Efficiency float32 // flux generated per point of damage absorbed (lower = better); 0 → treated as 1.0
+	Down       bool    // true when the shield is dropped (e.g. on flux overload)
+	RegenAcc   float32 // fractional regen accumulator (Current is int32; carries sub-point regen between ticks)
+}
+
+// ArmorGrid is the armor layer that sits between shields and hull (Phase 1).
+// Armor does not regenerate in combat (the repair role restores it in Phase 1.5).
+type ArmorGrid struct {
+	Current float32
+	Max     float32
+}
+
+// CombatFx carries transient, per-tick combat outputs for the snapshot/visualizer:
+// how many weapon mounts fired this tick and the damage type of the most recent hit taken.
+type CombatFx struct {
+	ShotsFired    int32
+	LastDamageType string
 }
 
 type Weapon struct {

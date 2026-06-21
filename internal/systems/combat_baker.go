@@ -69,29 +69,63 @@ func UnpackFleet(sourceWorld, targetWorld *ecs.World, fleetEntityID domain.Entit
 		})
 		targetWorld.AddComponent(shipID, &domain.Velocity{X: 0, Y: 0})
 
-		// Компоненты здоровья и щитов из структуры корабля
-		targetWorld.AddComponent(shipID, &domain.Health{
-			Current: ship.Health,
-			Max:     ship.MaxHealth,
-		})
-		targetWorld.AddComponent(shipID, &domain.Shield{
-			Current:   ship.Shield,
-			Max:       ship.MaxShield,
-			RegenRate: 1.0,
-		})
+		// Phase 1: bake combat stats from the fitting catalog (hull + weapons + flux + armor).
+		// Max stats come from the hull loadout; current HP/Shield carry over from the persisted
+		// FleetShip so battle damage persists across engagements.
+		cfg := domain.DefaultLoadoutForShipType(ship.ShipType)
+		stats := domain.ComputeStats(cfg)
 
-		// Компоненты характеристики корабля и оружия
-		speed, turn, dmg, rng, cooldown := getShipStats(ship.ShipType)
+		hp := ship.Health
+		if hp > int32(stats.MaxHP) {
+			hp = int32(stats.MaxHP)
+		}
+		targetWorld.AddComponent(shipID, &domain.Health{Current: hp, Max: int32(stats.MaxHP)})
+
+		if stats.ShieldType != "none" {
+			shieldCur := ship.Shield
+			if shieldCur > int32(stats.MaxShield) {
+				shieldCur = int32(stats.MaxShield)
+			}
+			targetWorld.AddComponent(shipID, &domain.Shield{
+				Current:    shieldCur,
+				Max:        int32(stats.MaxShield),
+				RegenRate:  stats.MaxShield * 0.05,
+				Type:       stats.ShieldType,
+				Arc:        stats.ShieldArc,
+				Efficiency: stats.ShieldEfficiency,
+			})
+		}
+
+		targetWorld.AddComponent(shipID, &domain.ArmorGrid{Current: stats.MaxArmor, Max: stats.MaxArmor})
+
 		targetWorld.AddComponent(shipID, &domain.ShipConfig{
 			ShipType: ship.ShipType,
-			MaxSpeed: speed,
-			TurnRate: turn,
+			MaxSpeed: stats.MaxSpeed,
+			TurnRate: stats.TurnRate,
 		})
+
+		targetWorld.AddComponent(shipID, &domain.FluxState{
+			Current:         0,
+			Capacity:        stats.MaxFlux,
+			DissipationRate: stats.FluxDissipation,
+		})
+
+		// Per-mount weapons — the actual damage source in combat.
+		weapons := make([]domain.FittedWeaponState, len(stats.Weapons))
+		copy(weapons, stats.Weapons)
+		targetWorld.AddComponent(shipID, &domain.WeaponGroup{Weapons: weapons})
+
+		// Transient combat FX (shots fired / last damage type) for the snapshot.
+		targetWorld.AddComponent(shipID, &domain.CombatFx{})
+
+		// The Weapon component is the AI's targeting controller: AISystem sets Active/TargetID and
+		// uses Range for standoff; CombatSystem reads the target but deals damage via WeaponGroup.
+		ctrlRange, ctrlCooldown := primaryWeaponProfile(stats.Weapons)
 		targetWorld.AddComponent(shipID, &domain.Weapon{
 			Type:     domain.WeaponLaser,
-			Damage:   dmg,
-			Range:    rng,
-			Cooldown: cooldown,
+			Damage:   0, // damage now comes from WeaponGroup mounts
+			Range:    ctrlRange,
+			Cooldown: ctrlCooldown,
 			Active:   false,
 		})
 
@@ -250,6 +284,26 @@ func PackFleet(sourceWorld, targetWorld *ecs.World, fleetEntityID domain.EntityI
 
 	fleet.Ships = survivingShips
 	return len(survivingShips) > 0
+}
+
+// primaryWeaponProfile derives the AI standoff range and a representative cooldown from a
+// ship's weapon mounts. AISystem keeps a ship at ~70-90% of this range, so we use the longest
+// mount range (the ship closes to where its furthest gun can hit). Falls back to a sane default
+// for weaponless ships.
+func primaryWeaponProfile(weapons []domain.FittedWeaponState) (rng float32, cooldown float32) {
+	rng = 300
+	cooldown = 1.0
+	maxRange := float32(0)
+	for i := range weapons {
+		if weapons[i].Definition.Range > maxRange {
+			maxRange = weapons[i].Definition.Range
+			cooldown = weapons[i].Definition.Cooldown
+		}
+	}
+	if maxRange > 0 {
+		rng = maxRange
+	}
+	return rng, cooldown
 }
 
 func getShipStats(shipType string) (speed, turn float32, dmg int32, rng float32, cooldown float32) {
