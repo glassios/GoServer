@@ -420,6 +420,66 @@ func main() {
 				}
 			}
 
+		case protocol.PacketType_C_BUILD_BASE:
+			// Build a space base at the player's current position (Phase 5).
+			tVal, okT := world.GetComponent(playerID, domain.Transform{})
+			cargoVal, okC := world.GetComponent(playerID, domain.Cargo{})
+			if okT && okC {
+				cargo := cargoVal.(*domain.Cargo)
+				const costIron, costTitan = 20, 10
+				if cargo.GetResourceTypeQuantity("IronPlates") < costIron || cargo.GetResourceTypeQuantity("TitaniumPlates") < costTitan {
+					sendSystemChat(bus, playerID, "Недостаточно ресурсов для базы (нужно 20 IronPlates + 10 TitaniumPlates)")
+				} else {
+					cargo.RemoveResourceTypeQuantity("IronPlates", costIron)
+					cargo.RemoveResourceTypeQuantity("TitaniumPlates", costTitan)
+					t := tVal.(*domain.Transform)
+					var factionID uint32 = 2
+					if fVal, ok := world.GetComponent(playerID, domain.FactionMember{}); ok {
+						factionID = fVal.(*domain.FactionMember).FactionID
+					}
+					baseID := world.CreateEntity(domain.EntitySpaceBase)
+					world.AddComponent(baseID, &domain.Transform{X: t.X + 60, Y: t.Y})
+					world.AddComponent(baseID, &domain.Health{Current: 500, Max: 500})
+					world.AddComponent(baseID, &domain.SpaceBase{OwnerID: uint64(playerID), Level: 1})
+					world.AddComponent(baseID, &domain.FactionMember{FactionID: factionID})
+					grid.Insert(baseID, t.X+60, t.Y)
+					sendInventoryUpdate(world, bus, playerID)
+					sendSystemChat(bus, playerID, "Звёздная база построена")
+					logger.Info("Player built a space base", zap.Uint64("playerID", uint64(playerID)), zap.Uint64("baseID", uint64(baseID)))
+				}
+			}
+
+		case protocol.PacketType_C_UPGRADE_BASE:
+			var req protocol.UpgradeBaseRequest
+			if err := proto.Unmarshal(cmd.Payload, &req); err == nil {
+				baseID := domain.EntityID(req.BaseId)
+				baseVal, okB := world.GetComponent(baseID, domain.SpaceBase{})
+				cargoVal, okC := world.GetComponent(playerID, domain.Cargo{})
+				if okB && okC {
+					base := baseVal.(*domain.SpaceBase)
+					cargo := cargoVal.(*domain.Cargo)
+					if base.OwnerID != uint64(playerID) {
+						sendSystemChat(bus, playerID, "Это не ваша база")
+					} else {
+						const costIron, costTitan = 10, 5
+						if cargo.GetResourceTypeQuantity("IronPlates") < costIron || cargo.GetResourceTypeQuantity("TitaniumPlates") < costTitan {
+							sendSystemChat(bus, playerID, "Недостаточно ресурсов для улучшения (нужно 10 IronPlates + 5 TitaniumPlates)")
+						} else {
+							cargo.RemoveResourceTypeQuantity("IronPlates", costIron)
+							cargo.RemoveResourceTypeQuantity("TitaniumPlates", costTitan)
+							base.Level++
+							if hVal, ok := world.GetComponent(baseID, domain.Health{}); ok {
+								h := hVal.(*domain.Health)
+								h.Max += 250
+								h.Current = h.Max
+							}
+							sendInventoryUpdate(world, bus, playerID)
+							sendSystemChat(bus, playerID, fmt.Sprintf("База улучшена до уровня %d", base.Level))
+						}
+					}
+				}
+			}
+
 		case protocol.PacketType_C_JOIN_COMBAT_REQUEST:
 			var joinReq protocol.JoinCombatRequest
 			if err := proto.Unmarshal(cmd.Payload, &joinReq); err == nil {

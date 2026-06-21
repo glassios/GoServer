@@ -129,6 +129,15 @@ func BuildEntitySnapshot(world *ecs.World, id domain.EntityID) *protocol.EntityS
 		snap.Name = "Station"
 	} else if eType == domain.EntityLootContainer {
 		snap.Name = "Loot Container"
+	} else if eType == domain.EntitySpaceBase {
+		snap.Name = "Звёздная база"
+	}
+
+	// Space base level (Phase 5)
+	if baseVal, ok := world.GetComponent(id, domain.SpaceBase{}); ok {
+		base := baseVal.(*domain.SpaceBase)
+		snap.BaseLevel = base.Level
+		snap.Name = fmt.Sprintf("База ур.%d", base.Level)
 	}
 
 	// Ship Config (for rendering/UI visuals)
@@ -160,7 +169,7 @@ func BuildEntitySnapshot(world *ecs.World, id domain.EntityID) *protocol.EntityS
 		snap.QtyEnergyCoils = cargo.GetResourceTypeQuantity(domain.ResourceEnergyCoils)
 		snap.QtyLaserCannon = cargo.GetResourceTypeQuantity("Laser Cannon")
 		snap.QtyMiningLaser = cargo.GetResourceTypeQuantity("Mining Laser")
-		
+
 		snap.CargoCapacity = cargo.Capacity
 		var load int32
 		for _, item := range cargo.Items {
@@ -194,7 +203,7 @@ func BuildEntitySnapshot(world *ecs.World, id domain.EntityID) *protocol.EntityS
 // BuildDeltaSnapshot compares visible entities with the previous tick and builds a DeltaSnapshot.
 func BuildDeltaSnapshot(world *ecs.World, session *Session, tick uint64) (*protocol.DeltaSnapshot, bool) {
 	playerID := session.GetEntityID()
-	
+
 	// Get current visible entities
 	visVal, found := world.GetComponent(playerID, domain.Visibility{})
 	if !found {
@@ -242,8 +251,8 @@ func BuildDeltaSnapshot(world *ecs.World, session *Session, tick uint64) (*proto
 	}
 
 	return &protocol.DeltaSnapshot{
-		Tick:             tick,
-		UpdatedEntities:  updated,
+		Tick:              tick,
+		UpdatedEntities:   updated,
 		DestroyedEntities: destroyed,
 	}, true
 }
@@ -313,4 +322,3 @@ func BuildDeltaSnapshotFromWorldState(sysSnap *protocol.WorldSnapshot, session *
 		DestroyedEntities: destroyed,
 	}, true
 }
-

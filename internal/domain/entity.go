@@ -21,6 +21,7 @@ const (
 	EntityJumpGate
 	EntityLootContainer
 	EntityCombatMarker
+	EntitySpaceBase
 )
 
 func (e EntityType) String() string {
@@ -41,6 +42,8 @@ func (e EntityType) String() string {
 		return "LootContainer"
 	case EntityCombatMarker:
 		return "CombatMarker"
+	case EntitySpaceBase:
+		return "SpaceBase"
 	default:
 		return "Unknown"
 	}

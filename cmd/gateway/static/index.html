@@ -575,6 +575,12 @@
             </div>
         </div>
 
+        <div>
+            <h3 style="font-size: 0.8rem; margin-bottom: 6px; color: var(--accent-cyan);">База</h3>
+            <button class="btn btn-action" style="margin-top:0; padding:3px; font-size:0.65rem;" onclick="buildBase()">Построить базу (20 IronPlates + 10 TitaniumPlates)</button>
+            <div style="color:var(--text-muted); font-size:0.6rem; margin-top:3px;">Строится в текущей позиции. Кликните базу на карте, чтобы улучшить.</div>
+        </div>
+
         <div style="flex-grow: 1; display: flex; flex-direction: column;">
             <h3 style="font-size: 0.8rem; margin-bottom: 6px; color: var(--accent-cyan)">Server Event Log</h3>
             <div class="logs-box" id="event-logs">
@@ -695,6 +701,7 @@
                 <button class="btn btn-action btn-secondary" id="btn-mine" onclick="toggleMine()" style="margin-top:0;">Mining Laser</button>
                 <button class="btn btn-action" id="btn-join-combat" onclick="showJoinCombatDialog()" style="background: var(--accent-orange); color: white; display: none; margin-top:0;">Join Battle</button>
                 <button class="btn btn-action" id="btn-attack-fleet" onclick="attackTargetFleet()" style="background: var(--accent-orange); color: white; display: none; margin-top:0;">Attack Fleet</button>
+                <button class="btn btn-action" id="btn-upgrade-base" onclick="upgradeBase(Number(targetID))" style="background: var(--accent-cyan); color: white; display: none; margin-top:0;">Улучшить базу (10 IronPlates + 5 TitaniumPlates)</button>
             </div>
 
             <!-- Station Interaction Panel -->
@@ -1163,6 +1170,7 @@
                     refineryActive: ent.refinery_active,
                     shipyardQueueLen: ent.shipyard_queue_len,
                     shipType: ent.ship_type,
+                    baseLevel: ent.base_level || 0,
                     priceIron: ent.price_iron,
                     priceTitanium: ent.price_titanium,
                     priceCrystal: ent.price_crystal,
@@ -1218,6 +1226,7 @@
                     refineryActive: ent.refinery_active,
                     shipyardQueueLen: ent.shipyard_queue_len,
                     shipType: ent.ship_type,
+                    baseLevel: ent.base_level || 0,
                     priceIron: ent.price_iron,
                     priceTitanium: ent.price_titanium,
                     priceCrystal: ent.price_crystal,
@@ -1426,6 +1435,7 @@
             case 4: return 'Станция';
             case 5: return 'Врата';
             case 6: return 'Контейнер';
+            case 8: return 'База';
             default: return 'Неизвестно';
         }
     }
@@ -1835,6 +1845,17 @@
     function startResearch(projectId) {
         if (!(socket && socket.readyState === WebSocket.OPEN)) return;
         socket.send(JSON.stringify({ action: 'start_research', project_id: projectId }));
+    }
+
+    // ---- Phase 5: Space bases ----
+    function buildBase() {
+        if (!(socket && socket.readyState === WebSocket.OPEN)) return;
+        socket.send(JSON.stringify({ action: 'build_base' }));
+    }
+
+    function upgradeBase(baseId) {
+        if (!(socket && socket.readyState === WebSocket.OPEN)) return;
+        socket.send(JSON.stringify({ action: 'upgrade_base', target_id: baseId }));
     }
 
     // Animate the active research bar between server pushes.
@@ -2336,6 +2357,10 @@
         // Hide btn-attack-fleet by default
         const btnAttack = document.getElementById('btn-attack-fleet');
         if (btnAttack) btnAttack.style.display = 'none';
+
+        // Space base: show upgrade button (server enforces ownership + cost).
+        const btnUpgradeBase = document.getElementById('btn-upgrade-base');
+        if (btnUpgradeBase) btnUpgradeBase.style.display = (ent.type === 8) ? 'block' : 'none';
 
         // Check if player can manually attack target fleet (Player/NPC) on main map
         if (currentSystemID < 10000 && localPlayerID && entities.has(localPlayerID) && ent.id !== localPlayerID && (ent.type === 0 || ent.type === 1)) {
@@ -2993,6 +3018,9 @@
                 case 7: // COMBAT MARKER
                     drawCombatMarkerShape(ent);
                     break;
+                case 8: // SPACE BASE
+                    drawSpaceBaseShape(ent);
+                    break;
             }
         }
 
@@ -3107,6 +3135,7 @@
             case 5: r = 45; break; // Jump Gate
             case 6: r = 8;  break; // Loot Container
             case 7: r = 18; break; // Combat Marker
+            case 8: r = 40; break; // Space Base
             default: r = 10;
         }
         if (type === 2 && typeof arg === 'object' && arg !== null && arg.maxHp > 0) {
@@ -3319,6 +3348,46 @@
     }
 
     // Draw space Station structure
+    function drawSpaceBaseShape(ent) {
+        const r = getEntityRadius(ent);
+        const col = getEntityColor(ent);
+        ctx.shadowColor = col;
+        ctx.shadowBlur = 10;
+
+        // Outer hex hull
+        ctx.strokeStyle = col;
+        ctx.fillStyle = 'rgba(15,15,27,0.85)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+            const a = Math.PI / 3 * i + Date.now() / 4000;
+            const x = Math.cos(a) * r, y = Math.sin(a) * r;
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Inner core
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = col;
+        ctx.globalAlpha = 0.5 + 0.3 * Math.sin(Date.now() / 400);
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 0.35, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+
+        // Level pips around the core
+        const lvl = ent.baseLevel || 1;
+        ctx.fillStyle = '#ffffff';
+        for (let i = 0; i < lvl; i++) {
+            const a = -Math.PI / 2 + (Math.PI * 2 / Math.max(lvl, 1)) * i;
+            ctx.beginPath();
+            ctx.arc(Math.cos(a) * r * 0.6, Math.sin(a) * r * 0.6, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
     function drawStationShape(ent) {
         let r = getEntityRadius(ent);
         ctx.shadowColor = 'var(--accent-cyan)';

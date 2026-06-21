@@ -244,6 +244,13 @@ type Shipyard struct {
 	Progress float32
 }
 
+// SpaceBase is a player-built structure (Phase 5). Health lives in the standard Health component;
+// Level scales its durability and (later) production/defense. OwnerID gates upgrades.
+type SpaceBase struct {
+	OwnerID uint64
+	Level   int32
+}
+
 // CraftJob is one queued crafting order on a player (Phase 3). Inputs are consumed at enqueue
 // time; outputs are delivered to the player's cargo when Progress reaches TotalTime.
 type CraftJob struct {

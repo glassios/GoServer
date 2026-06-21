@@ -58,6 +58,10 @@ enum PacketType {
   // Phase 3 research
   C_START_RESEARCH = 35;
   S_RESEARCH_STATUS = 36;
+
+  // Phase 5 space bases
+  C_BUILD_BASE = 37;
+  C_UPGRADE_BASE = 38;
 }
 
 message Packet {
@@ -169,6 +173,8 @@ message EntitySnapshot {
   string strategy = 47;          // attack | defense | retreat
   uint64 assist_target_id = 48;  // ally being repaired/supported this tick
   string assist_type = 49;       // "repair" | "support" (for the assist beam color)
+  // Phase 5 space bases
+  int32 base_level = 50;         // level of a SpaceBase entity
 }
 
 message WorldSnapshot {
@@ -512,4 +518,13 @@ message ResearchProjectProto {
 
 message ResearchStatus {
   repeated ResearchProjectProto projects = 1;
+}
+
+// Phase 5: space bases.
+message BuildBaseRequest {
+  // Built at the player's current position; no fields needed.
+}
+
+message UpgradeBaseRequest {
+  uint64 base_id = 1;
 }

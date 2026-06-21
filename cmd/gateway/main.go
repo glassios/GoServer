@@ -3,9 +3,10 @@ package main
 import (
 	"context"
 	"database/sql"
-	_ "embed"
+	"embed"
 	"flag"
 	"fmt"
+	"io/fs"
 	"math/rand"
 	"net/http"
 	"os"
@@ -36,6 +37,13 @@ import (
 
 //go:embed static/index.html
 var indexHTML []byte
+
+// New WebGL (React Three Fiber) client, built by `cmd/gateway/webclient` (npm run build).
+// Served at /client3d/ alongside the legacy Canvas2D client at /. Rebuild the Vite
+// project before `go build` so this embed picks up the latest dist.
+//
+//go:embed all:webclient/dist
+var client3dFS embed.FS
 
 // SafeConn wraps a websocket.Conn with a write mutex to prevent concurrent writes.
 type SafeConn struct {
@@ -578,6 +586,14 @@ func main() {
 		w.Write(indexHTML)
 	})
 
+	// New WebGL client (React Three Fiber) served as a static SPA at /client3d/.
+	// This subtree pattern takes precedence over the "/" catch-all for matching paths.
+	if client3dSub, err := fs.Sub(client3dFS, "webclient/dist"); err != nil {
+		logger.Error("Failed to mount client3d assets", zap.Error(err))
+	} else {
+		http.Handle("/client3d/", http.StripPrefix("/client3d/", http.FileServer(http.FS(client3dSub))))
+	}
+
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		rawConn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -787,6 +803,34 @@ func main() {
 						data, _ := proto.Marshal(serverCmd)
 						if pubErr := bus.Publish(fmt.Sprintf("system.%d.input", systemID), data); pubErr != nil {
 							logger.Error("Failed to publish WS start_research to NATS", zap.Error(pubErr))
+						}
+					}
+
+				case "build_base":
+					wsPlayersMu.RLock()
+					wp, exists := wsConns[conn]
+					wsPlayersMu.RUnlock()
+					if exists {
+						systemID := routingTable.Get(wp.playerID)
+						payload, _ := proto.Marshal(&protocol.BuildBaseRequest{})
+						serverCmd := &protocol.ServerCommand{PlayerId: uint64(wp.playerID), Type: protocol.PacketType_C_BUILD_BASE, Payload: payload}
+						data, _ := proto.Marshal(serverCmd)
+						if pubErr := bus.Publish(fmt.Sprintf("system.%d.input", systemID), data); pubErr != nil {
+							logger.Error("Failed to publish WS build_base to NATS", zap.Error(pubErr))
+						}
+					}
+
+				case "upgrade_base":
+					wsPlayersMu.RLock()
+					wp, exists := wsConns[conn]
+					wsPlayersMu.RUnlock()
+					if exists {
+						systemID := routingTable.Get(wp.playerID)
+						payload, _ := proto.Marshal(&protocol.UpgradeBaseRequest{BaseId: msg.GetTargetID()})
+						serverCmd := &protocol.ServerCommand{PlayerId: uint64(wp.playerID), Type: protocol.PacketType_C_UPGRADE_BASE, Payload: payload}
+						data, _ := proto.Marshal(serverCmd)
+						if pubErr := bus.Publish(fmt.Sprintf("system.%d.input", systemID), data); pubErr != nil {
+							logger.Error("Failed to publish WS upgrade_base to NATS", zap.Error(pubErr))
 						}
 					}
 
