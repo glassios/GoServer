@@ -126,3 +126,55 @@ func ValidateLoadout(cfg *domain.ShipConfiguration) error {
 	}
 	return nil
 }
+
+// countModuleWeapons tallies the module items (Phase 4) required by a configuration:
+// itemName -> count of slots fitted with a module weapon producing that item.
+func countModuleWeapons(cfg *domain.ShipConfiguration) map[string]int32 {
+	out := map[string]int32{}
+	for _, wid := range cfg.FittedWeapons {
+		if item := domain.ModuleItemForWeapon(wid); item != "" {
+			out[item]++
+		}
+	}
+	return out
+}
+
+// ApplyFitInventory reconciles module items between a ship's current and requested loadouts against
+// the player's cargo: modules newly fitted are consumed, modules removed are returned. It validates
+// first and mutates cargo only if every addition is covered (no partial application). Basic weapons
+// (ModuleItem == "") are ignored.
+func ApplyFitInventory(cargo *domain.Cargo, current, requested *domain.ShipConfiguration) error {
+	cur := countModuleWeapons(current)
+	req := countModuleWeapons(requested)
+
+	// Validate additions against cargo before mutating.
+	for item, need := range req {
+		if delta := need - cur[item]; delta > 0 {
+			if cargo.GetResourceTypeQuantity(domain.ResourceType(item)) < delta {
+				return fmt.Errorf("нет модуля в трюме: %s", item)
+			}
+		}
+	}
+
+	// Apply: consume additions, return removals.
+	seen := map[string]bool{}
+	for item := range cur {
+		seen[item] = true
+	}
+	for item := range req {
+		seen[item] = true
+	}
+	for item := range seen {
+		delta := req[item] - cur[item]
+		if delta > 0 {
+			// Remove one at a time: crafted modules are non-stackable, so a count may span
+			// several single-quantity cargo instances.
+			for d := int32(0); d < delta; d++ {
+				cargo.RemoveResourceTypeQuantity(domain.ResourceType(item), 1)
+			}
+		} else if delta < 0 {
+			cargo.AddResourceTypeQuantity(domain.ResourceType(item), -delta)
+		}
+	}
+	return nil
+}

@@ -2,9 +2,9 @@ package domain
 
 type WeaponSlot struct {
 	SlotID string  `json:"slot_id"`
-	Size   string  `json:"size"`   // SMALL, MEDIUM, LARGE
-	Type   string  `json:"type"`   // BALLISTIC, ENERGY, MISSILE, UNIVERSAL, etc.
-	Mount  string  `json:"mount"`  // TURRET, HARDPOINT, HIDDEN
+	Size   string  `json:"size"`  // SMALL, MEDIUM, LARGE
+	Type   string  `json:"type"`  // BALLISTIC, ENERGY, MISSILE, UNIVERSAL, etc.
+	Mount  string  `json:"mount"` // TURRET, HARDPOINT, HIDDEN
 	X      float32 `json:"x"`
 	Y      float32 `json:"y"`
 	Angle  float32 `json:"angle"`
@@ -38,6 +38,10 @@ type WeaponDefinition struct {
 	FluxCost      float32 `json:"flux_cost"`
 	Range         float32 `json:"range"`
 	Cooldown      float32 `json:"cooldown"`
+	// ModuleItem (Phase 4) is the cargo item this weapon is crafted as. When non-empty the weapon
+	// is a "module": fitting it consumes one item from the player's cargo and unfitting returns it.
+	// Empty means a built-in/basic weapon that is always available.
+	ModuleItem string `json:"module_item"`
 }
 
 type Hullmod struct {
@@ -45,7 +49,7 @@ type Hullmod struct {
 	ModID        string             `json:"mod_id"`
 	Name         string             `json:"name"`
 	OPCostBySize map[string]int32   `json:"op_cost_by_size"` // FRIGATE, DESTROYER, etc.
-	Modifiers    map[string]float32 `json:"modifiers"`        // e.g. "shield_damage_taken_mult": 0.8
+	Modifiers    map[string]float32 `json:"modifiers"`       // e.g. "shield_damage_taken_mult": 0.8
 }
 
 type ShipConfiguration struct {

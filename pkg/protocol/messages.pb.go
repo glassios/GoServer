@@ -2549,6 +2549,7 @@ type WeaponDefProto struct {
 	FluxCost      float32                `protobuf:"fixed32,8,opt,name=flux_cost,json=fluxCost,proto3" json:"flux_cost,omitempty"`
 	Range         float32                `protobuf:"fixed32,9,opt,name=range,proto3" json:"range,omitempty"`
 	Cooldown      float32                `protobuf:"fixed32,10,opt,name=cooldown,proto3" json:"cooldown,omitempty"`
+	ModuleItem    string                 `protobuf:"bytes,11,opt,name=module_item,json=moduleItem,proto3" json:"module_item,omitempty"` // Phase 4: cargo item required to fit this weapon ("" = basic/free)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2653,6 +2654,13 @@ func (x *WeaponDefProto) GetCooldown() float32 {
 	return 0
 }
 
+func (x *WeaponDefProto) GetModuleItem() string {
+	if x != nil {
+		return x.ModuleItem
+	}
+	return ""
+}
+
 type HullmodDefProto struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ModId         string                 `protobuf:"bytes,1,opt,name=mod_id,json=modId,proto3" json:"mod_id,omitempty"`
@@ -2718,6 +2726,7 @@ type HangarData struct {
 	Hulls         []*HullDefProto        `protobuf:"bytes,1,rep,name=hulls,proto3" json:"hulls,omitempty"`
 	Weapons       []*WeaponDefProto      `protobuf:"bytes,2,rep,name=weapons,proto3" json:"weapons,omitempty"`
 	Hullmods      []*HullmodDefProto     `protobuf:"bytes,3,rep,name=hullmods,proto3" json:"hullmods,omitempty"`
+	OwnedModules  map[string]int32       `protobuf:"bytes,4,rep,name=owned_modules,json=ownedModules,proto3" json:"owned_modules,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"` // Phase 4: module item -> count in the player's cargo
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2769,6 +2778,13 @@ func (x *HangarData) GetWeapons() []*WeaponDefProto {
 func (x *HangarData) GetHullmods() []*HullmodDefProto {
 	if x != nil {
 		return x.Hullmods
+	}
+	return nil
+}
+
+func (x *HangarData) GetOwnedModules() map[string]int32 {
+	if x != nil {
+		return x.OwnedModules
 	}
 	return nil
 }
@@ -4593,7 +4609,7 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"\n" +
 	"size_class\x18\t \x01(\tR\tsizeClass\x12/\n" +
 	"\x05slots\x18\n" +
-	" \x03(\v2\x19.protocol.WeaponSlotProtoR\x05slots\"\xb4\x02\n" +
+	" \x03(\v2\x19.protocol.WeaponSlotProtoR\x05slots\"\xd5\x02\n" +
 	"\x0eWeaponDefProto\x12\x1b\n" +
 	"\tweapon_id\x18\x01 \x01(\tR\bweaponId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1f\n" +
@@ -4608,19 +4624,25 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"\tflux_cost\x18\b \x01(\x02R\bfluxCost\x12\x14\n" +
 	"\x05range\x18\t \x01(\x02R\x05range\x12\x1a\n" +
 	"\bcooldown\x18\n" +
-	" \x01(\x02R\bcooldown\"\xd1\x01\n" +
+	" \x01(\x02R\bcooldown\x12\x1f\n" +
+	"\vmodule_item\x18\v \x01(\tR\n" +
+	"moduleItem\"\xd1\x01\n" +
 	"\x0fHullmodDefProto\x12\x15\n" +
 	"\x06mod_id\x18\x01 \x01(\tR\x05modId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12R\n" +
 	"\x0fop_cost_by_size\x18\x03 \x03(\v2+.protocol.HullmodDefProto.OpCostBySizeEntryR\fopCostBySize\x1a?\n" +
 	"\x11OpCostBySizeEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\"\xa5\x01\n" +
+	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\"\xb3\x02\n" +
 	"\n" +
 	"HangarData\x12,\n" +
 	"\x05hulls\x18\x01 \x03(\v2\x16.protocol.HullDefProtoR\x05hulls\x122\n" +
 	"\aweapons\x18\x02 \x03(\v2\x18.protocol.WeaponDefProtoR\aweapons\x125\n" +
-	"\bhullmods\x18\x03 \x03(\v2\x19.protocol.HullmodDefProtoR\bhullmods\"\x9e\x02\n" +
+	"\bhullmods\x18\x03 \x03(\v2\x19.protocol.HullmodDefProtoR\bhullmods\x12K\n" +
+	"\rowned_modules\x18\x04 \x03(\v2&.protocol.HangarData.OwnedModulesEntryR\fownedModules\x1a?\n" +
+	"\x11OwnedModulesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\"\x9e\x02\n" +
 	"\x0eFitShipRequest\x12\x17\n" +
 	"\aship_id\x18\x01 \x01(\rR\x06shipId\x12R\n" +
 	"\x0efitted_weapons\x18\x02 \x03(\v2+.protocol.FitShipRequest.FittedWeaponsEntryR\rfittedWeapons\x12'\n" +
@@ -4831,7 +4853,7 @@ func file_pkg_protocol_messages_proto_rawDescGZIP() []byte {
 }
 
 var file_pkg_protocol_messages_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_pkg_protocol_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 60)
+var file_pkg_protocol_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 61)
 var file_pkg_protocol_messages_proto_goTypes = []any{
 	(PacketType)(0),                // 0: protocol.PacketType
 	(*Packet)(nil),                 // 1: protocol.Packet
@@ -4891,9 +4913,10 @@ var file_pkg_protocol_messages_proto_goTypes = []any{
 	nil,                            // 55: protocol.FleetShipProto.FittedWeaponsEntry
 	nil,                            // 56: protocol.FleetStatusShip.FittedWeaponsEntry
 	nil,                            // 57: protocol.HullmodDefProto.OpCostBySizeEntry
-	nil,                            // 58: protocol.FitShipRequest.FittedWeaponsEntry
-	nil,                            // 59: protocol.RecipeProto.InputsEntry
-	nil,                            // 60: protocol.RecipeProto.OutputsEntry
+	nil,                            // 58: protocol.HangarData.OwnedModulesEntry
+	nil,                            // 59: protocol.FitShipRequest.FittedWeaponsEntry
+	nil,                            // 60: protocol.RecipeProto.InputsEntry
+	nil,                            // 61: protocol.RecipeProto.OutputsEntry
 }
 var file_pkg_protocol_messages_proto_depIdxs = []int32{
 	0,  // 0: protocol.Packet.type:type_name -> protocol.PacketType
@@ -4911,24 +4934,25 @@ var file_pkg_protocol_messages_proto_depIdxs = []int32{
 	29, // 12: protocol.HangarData.hulls:type_name -> protocol.HullDefProto
 	30, // 13: protocol.HangarData.weapons:type_name -> protocol.WeaponDefProto
 	31, // 14: protocol.HangarData.hullmods:type_name -> protocol.HullmodDefProto
-	58, // 15: protocol.FitShipRequest.fitted_weapons:type_name -> protocol.FitShipRequest.FittedWeaponsEntry
-	19, // 16: protocol.PlayerMigrationPayload.cargo_items:type_name -> protocol.ItemInstanceProto
-	23, // 17: protocol.PlayerMigrationPayload.fleet_ships:type_name -> protocol.FleetShipProto
-	50, // 18: protocol.PlayerMigrationPayload.skills:type_name -> protocol.SkillProto
-	34, // 19: protocol.SystemTransferRequest.payload:type_name -> protocol.PlayerMigrationPayload
-	19, // 20: protocol.VaultStatus.personal_items:type_name -> protocol.ItemInstanceProto
-	19, // 21: protocol.VaultStatus.corporate_items:type_name -> protocol.ItemInstanceProto
-	59, // 22: protocol.RecipeProto.inputs:type_name -> protocol.RecipeProto.InputsEntry
-	60, // 23: protocol.RecipeProto.outputs:type_name -> protocol.RecipeProto.OutputsEntry
-	48, // 24: protocol.ProductionStatus.queue:type_name -> protocol.CraftJobProto
-	47, // 25: protocol.ProductionStatus.recipes:type_name -> protocol.RecipeProto
-	50, // 26: protocol.PlayerProgressMsg.skills:type_name -> protocol.SkillProto
-	53, // 27: protocol.ResearchStatus.projects:type_name -> protocol.ResearchProjectProto
-	28, // [28:28] is the sub-list for method output_type
-	28, // [28:28] is the sub-list for method input_type
-	28, // [28:28] is the sub-list for extension type_name
-	28, // [28:28] is the sub-list for extension extendee
-	0,  // [0:28] is the sub-list for field type_name
+	58, // 15: protocol.HangarData.owned_modules:type_name -> protocol.HangarData.OwnedModulesEntry
+	59, // 16: protocol.FitShipRequest.fitted_weapons:type_name -> protocol.FitShipRequest.FittedWeaponsEntry
+	19, // 17: protocol.PlayerMigrationPayload.cargo_items:type_name -> protocol.ItemInstanceProto
+	23, // 18: protocol.PlayerMigrationPayload.fleet_ships:type_name -> protocol.FleetShipProto
+	50, // 19: protocol.PlayerMigrationPayload.skills:type_name -> protocol.SkillProto
+	34, // 20: protocol.SystemTransferRequest.payload:type_name -> protocol.PlayerMigrationPayload
+	19, // 21: protocol.VaultStatus.personal_items:type_name -> protocol.ItemInstanceProto
+	19, // 22: protocol.VaultStatus.corporate_items:type_name -> protocol.ItemInstanceProto
+	60, // 23: protocol.RecipeProto.inputs:type_name -> protocol.RecipeProto.InputsEntry
+	61, // 24: protocol.RecipeProto.outputs:type_name -> protocol.RecipeProto.OutputsEntry
+	48, // 25: protocol.ProductionStatus.queue:type_name -> protocol.CraftJobProto
+	47, // 26: protocol.ProductionStatus.recipes:type_name -> protocol.RecipeProto
+	50, // 27: protocol.PlayerProgressMsg.skills:type_name -> protocol.SkillProto
+	53, // 28: protocol.ResearchStatus.projects:type_name -> protocol.ResearchProjectProto
+	29, // [29:29] is the sub-list for method output_type
+	29, // [29:29] is the sub-list for method input_type
+	29, // [29:29] is the sub-list for extension type_name
+	29, // [29:29] is the sub-list for extension extendee
+	0,  // [0:29] is the sub-list for field type_name
 }
 
 func init() { file_pkg_protocol_messages_proto_init() }
@@ -4942,7 +4966,7 @@ func file_pkg_protocol_messages_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_protocol_messages_proto_rawDesc), len(file_pkg_protocol_messages_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   60,
+			NumMessages:   61,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

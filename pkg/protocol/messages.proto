@@ -330,6 +330,7 @@ message WeaponDefProto {
   float flux_cost = 8;
   float range = 9;
   float cooldown = 10;
+  string module_item = 11; // Phase 4: cargo item required to fit this weapon ("" = basic/free)
 }
 
 message HullmodDefProto {
@@ -342,6 +343,7 @@ message HangarData {
   repeated HullDefProto hulls = 1;
   repeated WeaponDefProto weapons = 2;
   repeated HullmodDefProto hullmods = 3;
+  map<string, int32> owned_modules = 4; // Phase 4: module item -> count in the player's cargo
 }
 
 // Client requests a refit of a single ship; server validates + applies + echoes S_FLEET_STATUS.

@@ -338,6 +338,10 @@ var ResourceToID = map[ResourceType]uint32{
 	ResourceFuelCells:     12,
 	ResourceMicrochips:    13,
 	ResourceEnergyCoils:   14,
+	// Phase 4 crafted weapon modules (research-gated recipes produce these).
+	"Heavy Blaster":   15,
+	"Heavy Mauler":    16,
+	"Hellbore Cannon": 17,
 }
 
 var IDToResource = map[uint32]ResourceType{
@@ -353,6 +357,9 @@ var IDToResource = map[uint32]ResourceType{
 	12: ResourceFuelCells,
 	13: ResourceMicrochips,
 	14: ResourceEnergyCoils,
+	15: "Heavy Blaster",
+	16: "Heavy Mauler",
+	17: "Hellbore Cannon",
 }
 
 func (c *Cargo) GetQuantity(defID uint32) int32 {

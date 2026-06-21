@@ -1551,11 +1551,19 @@
             let slotsHtml = '';
             (hull.slots || []).forEach(slot => {
                 const cur = fitted[slot.slot_id] || '';
+                const owned = hangarCatalog.owned_modules || {};
                 const opts = ['<option value="">— пусто —</option>'];
                 (hangarCatalog.weapons || []).forEach(w => {
-                    if (weaponFitsSlot(w, slot)) {
-                        opts.push(`<option value="${w.weapon_id}" ${w.weapon_id === cur ? 'selected' : ''}>${w.name} (${w.op_cost}OP, ${Math.round(w.damage_per_shot)} ${w.damage_type.slice(0,4)})</option>`);
+                    if (!weaponFitsSlot(w, slot)) return;
+                    let label = `${w.name} (${w.op_cost}OP, ${Math.round(w.damage_per_shot)} ${w.damage_type.slice(0,4)})`;
+                    let disabled = '';
+                    if (w.module_item) {
+                        // Module weapon: show owned count; disable if none owned and not already fitted here.
+                        const have = owned[w.module_item] || 0;
+                        label += ` [модуль ×${have}]`;
+                        if (have <= 0 && w.weapon_id !== cur) disabled = 'disabled';
                     }
+                    opts.push(`<option value="${w.weapon_id}" ${w.weapon_id === cur ? 'selected' : ''} ${disabled}>${label}</option>`);
                 });
                 slotsHtml += `<div style="display:flex; gap:4px; align-items:center;">
                     <span style="width:74px; color:var(--text-muted)">${slot.slot_id} ${slot.size.slice(0,1)}/${slot.type.slice(0,3)}</span>

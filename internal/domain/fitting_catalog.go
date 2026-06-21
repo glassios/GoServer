@@ -129,9 +129,9 @@ var StockWeapons = []WeaponDefinition{
 	{ID: 3, WeaponID: WeaponLightAutocannon, Name: "Light Autocannon", WeaponType: "BALLISTIC", WeaponSize: "SMALL", OPCost: 6, DamagePerShot: 10, DamageType: "KINETIC", FluxCost: 8, Range: 500, Cooldown: 0.5},
 	{ID: 4, WeaponID: WeaponLightMortar, Name: "Light Mortar", WeaponType: "BALLISTIC", WeaponSize: "SMALL", OPCost: 5, DamagePerShot: 14, DamageType: "EXPLOSIVE", FluxCost: 9, Range: 350, Cooldown: 0.8},
 	{ID: 5, WeaponID: WeaponSwarmerSRM, Name: "Swarmer SRM", WeaponType: "MISSILE", WeaponSize: "SMALL", OPCost: 4, DamagePerShot: 20, DamageType: "EXPLOSIVE", FluxCost: 0, Range: 600, Cooldown: 2.0},
-	{ID: 6, WeaponID: WeaponHeavyBlaster, Name: "Heavy Blaster", WeaponType: "ENERGY", WeaponSize: "MEDIUM", OPCost: 12, DamagePerShot: 45, DamageType: "ENERGY", FluxCost: 45, Range: 400, Cooldown: 1.0},
-	{ID: 7, WeaponID: WeaponHeavyMauler, Name: "Heavy Mauler", WeaponType: "BALLISTIC", WeaponSize: "MEDIUM", OPCost: 12, DamagePerShot: 40, DamageType: "EXPLOSIVE", FluxCost: 30, Range: 700, Cooldown: 1.2},
-	{ID: 8, WeaponID: WeaponHellbore, Name: "Hellbore Cannon", WeaponType: "BALLISTIC", WeaponSize: "LARGE", OPCost: 22, DamagePerShot: 100, DamageType: "EXPLOSIVE", FluxCost: 80, Range: 900, Cooldown: 2.5},
+	{ID: 6, WeaponID: WeaponHeavyBlaster, Name: "Heavy Blaster", WeaponType: "ENERGY", WeaponSize: "MEDIUM", OPCost: 12, DamagePerShot: 45, DamageType: "ENERGY", FluxCost: 45, Range: 400, Cooldown: 1.0, ModuleItem: "Heavy Blaster"},
+	{ID: 7, WeaponID: WeaponHeavyMauler, Name: "Heavy Mauler", WeaponType: "BALLISTIC", WeaponSize: "MEDIUM", OPCost: 12, DamagePerShot: 40, DamageType: "EXPLOSIVE", FluxCost: 30, Range: 700, Cooldown: 1.2, ModuleItem: "Heavy Mauler"},
+	{ID: 8, WeaponID: WeaponHellbore, Name: "Hellbore Cannon", WeaponType: "BALLISTIC", WeaponSize: "LARGE", OPCost: 22, DamagePerShot: 100, DamageType: "EXPLOSIVE", FluxCost: 80, Range: 900, Cooldown: 2.5, ModuleItem: "Hellbore Cannon"},
 	{ID: 9, WeaponID: WeaponMiningLaserFit, Name: "Mining Laser", WeaponType: "ENERGY", WeaponSize: "SMALL", OPCost: 3, DamagePerShot: 5, DamageType: "ENERGY", FluxCost: 4, Range: 300, Cooldown: 1.0},
 }
 
@@ -207,6 +207,15 @@ func HullmodByID(modID string) *Hullmod {
 		return &c
 	}
 	return nil
+}
+
+// ModuleItemForWeapon returns the cargo item a weapon is crafted as (Phase 4), or "" if the
+// weapon is a built-in/basic one that does not require owning a module.
+func ModuleItemForWeapon(weaponID string) string {
+	if w, ok := weaponByID[weaponID]; ok {
+		return w.ModuleItem
+	}
+	return ""
 }
 
 // defaultRoleCycle gives an unconfigured fleet a varied, deterministic role spread so battles

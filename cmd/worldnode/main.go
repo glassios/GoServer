@@ -332,7 +332,7 @@ func main() {
 			}
 
 		case protocol.PacketType_C_GET_HANGAR:
-			sendHangarData(bus, playerID)
+			sendHangarData(world, bus, playerID)
 			sendFleetStatus(world, bus, playerID)
 
 		case protocol.PacketType_C_FIT_SHIP:
@@ -369,6 +369,15 @@ func main() {
 							sendSystemChat(bus, playerID, fmt.Sprintf("Оснастка отклонена: %s", verr.Error()))
 							break
 						}
+						// Phase 4: reconcile crafted weapon modules against cargo (consume newly
+						// fitted, return removed) before committing the loadout.
+						currentCfg := fleet.Ships[i].EffectiveConfig()
+						if cargoVal, hasCargo := world.GetComponent(playerID, domain.Cargo{}); hasCargo {
+							if ierr := systems.ApplyFitInventory(cargoVal.(*domain.Cargo), currentCfg, cfg); ierr != nil {
+								sendSystemChat(bus, playerID, fmt.Sprintf("Оснастка отклонена: %s", ierr.Error()))
+								break
+							}
+						}
 						fleet.Ships[i].Customized = true
 						fleet.Ships[i].HullID = hullID
 						fleet.Ships[i].FittedWeapons = weapons
@@ -376,6 +385,8 @@ func main() {
 						fleet.Ships[i].Vents = req.Vents
 						fleet.Ships[i].Capacitors = req.Capacitors
 						sendFleetStatus(world, bus, playerID)
+						sendInventoryUpdate(world, bus, playerID)
+						sendHangarData(world, bus, playerID) // refresh owned-module counts
 						if playerRepo != nil {
 							savePlayerNow(world, playerRepo, playerID, logger)
 						}
@@ -1207,7 +1218,7 @@ func sendFleetStatus(world *ecs.World, bus messaging.MessageBus, playerID domain
 // sendHangarData pushes the full fitting catalog (hulls/weapons/hullmods) to the client so the
 // Hangar/Refit screen can offer compatible parts. The catalog is static (code-defined), so this
 // is a straightforward projection of the domain Stock* tables.
-func sendHangarData(bus messaging.MessageBus, playerID domain.EntityID) {
+func sendHangarData(world *ecs.World, bus messaging.MessageBus, playerID domain.EntityID) {
 	hulls := make([]*protocol.HullDefProto, 0, len(domain.StockHulls))
 	for i := range domain.StockHulls {
 		h := &domain.StockHulls[i]
@@ -1245,6 +1256,7 @@ func sendHangarData(bus messaging.MessageBus, playerID domain.EntityID) {
 			FluxCost:      w.FluxCost,
 			Range:         w.Range,
 			Cooldown:      w.Cooldown,
+			ModuleItem:    w.ModuleItem,
 		})
 	}
 
@@ -1258,7 +1270,20 @@ func sendHangarData(bus messaging.MessageBus, playerID domain.EntityID) {
 		})
 	}
 
-	data := &protocol.HangarData{Hulls: hulls, Weapons: weapons, Hullmods: hullmods}
+	// Phase 4: report how many of each crafted module the player currently owns in cargo so the
+	// hangar can show counts and gate selection.
+	owned := map[string]int32{}
+	if cargoVal, ok := world.GetComponent(playerID, domain.Cargo{}); ok {
+		cargo := cargoVal.(*domain.Cargo)
+		for i := range domain.StockWeapons {
+			item := domain.StockWeapons[i].ModuleItem
+			if item != "" {
+				owned[item] = cargo.GetResourceTypeQuantity(domain.ResourceType(item))
+			}
+		}
+	}
+
+	data := &protocol.HangarData{Hulls: hulls, Weapons: weapons, Hullmods: hullmods, OwnedModules: owned}
 	payload, _ := proto.Marshal(data)
 	packet := &protocol.Packet{Type: protocol.PacketType_S_HANGAR_DATA, Payload: payload}
 	packetData, _ := proto.Marshal(packet)
