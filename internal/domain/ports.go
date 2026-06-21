@@ -25,6 +25,18 @@ type AsteroidSnapshot struct {
 	Amount    int32
 }
 
+// SpaceBaseSnapshot is the persistable form of a player-built space base (Phase 5).
+type SpaceBaseSnapshot struct {
+	EntityID  EntityID
+	SystemID  uint32
+	OwnerID   uint64
+	X         float32
+	Y         float32
+	Level     int32
+	Health    int32
+	MaxHealth int32
+}
+
 type StationSnapshot struct {
 	EntityID     EntityID
 	Transform    Transform

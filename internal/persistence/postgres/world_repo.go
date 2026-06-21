@@ -95,6 +95,59 @@ func (r *PostgresWorldRepository) SaveStations(ctx context.Context, systemID uin
 	return tx.Commit()
 }
 
+// SaveSpaceBases persists all space bases for a system (Phase 5). It replaces the system's rows so
+// removed bases are dropped. Concrete (not on the WorldRepository interface) to avoid churn.
+func (r *PostgresWorldRepository) SaveSpaceBases(ctx context.Context, systemID uint32, bases []domain.SpaceBaseSnapshot) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err = tx.ExecContext(ctx, "DELETE FROM space_bases WHERE system_id = $1", systemID); err != nil {
+		return err
+	}
+
+	stmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO space_bases (id, system_id, owner_id, x, y, level, health, max_health)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, b := range bases {
+		if _, err = stmt.ExecContext(ctx, uint64(b.EntityID), systemID, b.OwnerID, b.X, b.Y, b.Level, b.Health, b.MaxHealth); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// LoadSpaceBases returns the persisted space bases for a system (Phase 5).
+func (r *PostgresWorldRepository) LoadSpaceBases(ctx context.Context, systemID uint32) ([]domain.SpaceBaseSnapshot, error) {
+	rows, err := r.db.QueryContext(ctx,
+		"SELECT id, owner_id, x, y, level, health, max_health FROM space_bases WHERE system_id = $1", systemID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []domain.SpaceBaseSnapshot
+	for rows.Next() {
+		var b domain.SpaceBaseSnapshot
+		var id, owner uint64
+		if err := rows.Scan(&id, &owner, &b.X, &b.Y, &b.Level, &b.Health, &b.MaxHealth); err != nil {
+			return nil, err
+		}
+		b.EntityID = domain.EntityID(id)
+		b.SystemID = systemID
+		b.OwnerID = owner
+		out = append(out, b)
+	}
+	return out, nil
+}
+
 func (r *PostgresWorldRepository) LoadWorld(ctx context.Context, systemID uint32) (*domain.WorldSnapshot, error) {
 	// Load player vaults from item_instances
 	playerVaults := make(map[uint64]map[uint64][]domain.ItemInstance)

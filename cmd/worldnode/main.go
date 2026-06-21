@@ -150,6 +150,7 @@ func main() {
 	shipyardSys := systems.NewShipyardSystem()
 	productionSys := systems.NewProductionSystem(bus)
 	researchSys := systems.NewResearchSystem(bus)
+	baseProductionSys := systems.NewBaseProductionSystem()
 	econSys := systems.NewEconomySystem()
 	lootSys := systems.NewLootSystem(grid)
 	cleanupSys := systems.NewCleanupSystem(grid)
@@ -168,6 +169,7 @@ func main() {
 		shipyardSys,
 		productionSys,
 		researchSys,
+		baseProductionSys,
 		econSys,
 		lootSys,
 		cleanupSys,
@@ -194,6 +196,23 @@ func main() {
 		}
 	} else {
 		seedStaticWorld(world, grid, systemID)
+	}
+
+	// Load persisted player-built space bases (Phase 5).
+	if pgRepo, ok := worldRepo.(*postgres.PostgresWorldRepository); ok {
+		if bases, lerr := pgRepo.LoadSpaceBases(context.Background(), systemID); lerr == nil {
+			for _, b := range bases {
+				world.RegisterEntityWithID(b.EntityID, domain.EntitySpaceBase)
+				world.AddComponent(b.EntityID, &domain.Transform{X: b.X, Y: b.Y})
+				world.AddComponent(b.EntityID, &domain.Health{Current: b.Health, Max: b.MaxHealth})
+				world.AddComponent(b.EntityID, &domain.SpaceBase{OwnerID: b.OwnerID, Level: b.Level})
+				world.AddComponent(b.EntityID, &domain.FactionMember{FactionID: 2})
+				grid.Insert(b.EntityID, b.X, b.Y)
+			}
+			logger.Info("Loaded persisted space bases", zap.Int("count", len(bases)))
+		} else {
+			logger.Warn("Failed to load space bases", zap.Error(lerr))
+		}
 	}
 
 	// 7. Loop Setup
@@ -443,6 +462,7 @@ func main() {
 					world.AddComponent(baseID, &domain.SpaceBase{OwnerID: uint64(playerID), Level: 1})
 					world.AddComponent(baseID, &domain.FactionMember{FactionID: factionID})
 					grid.Insert(baseID, t.X+60, t.Y)
+					persistSpaceBases(world, worldRepo, systemID, logger)
 					sendInventoryUpdate(world, bus, playerID)
 					sendSystemChat(bus, playerID, "Звёздная база построена")
 					logger.Info("Player built a space base", zap.Uint64("playerID", uint64(playerID)), zap.Uint64("baseID", uint64(baseID)))
@@ -473,6 +493,7 @@ func main() {
 								h.Max += 250
 								h.Current = h.Max
 							}
+							persistSpaceBases(world, worldRepo, systemID, logger)
 							sendInventoryUpdate(world, bus, playerID)
 							sendSystemChat(bus, playerID, fmt.Sprintf("База улучшена до уровня %d", base.Level))
 						}
@@ -1195,6 +1216,40 @@ func translateTradeError(err error) string {
 		return "Неверная цель"
 	default:
 		return err.Error()
+	}
+}
+
+// persistSpaceBases writes all current space bases in this system to the DB (Phase 5). No-op in
+// DB-less mode. Called after a base is built or upgraded so bases survive a worldnode restart.
+func persistSpaceBases(world *ecs.World, worldRepo domain.WorldRepository, systemID uint32, logger *zap.Logger) {
+	pgRepo, ok := worldRepo.(*postgres.PostgresWorldRepository)
+	if !ok {
+		return
+	}
+	baseIDs := world.Query(ecs.BuildMask(domain.SpaceBase{}))
+	snaps := make([]domain.SpaceBaseSnapshot, 0, len(baseIDs))
+	for _, id := range baseIDs {
+		bVal, _ := world.GetComponent(id, domain.SpaceBase{})
+		b := bVal.(*domain.SpaceBase)
+		tVal, okT := world.GetComponent(id, domain.Transform{})
+		if !okT {
+			continue
+		}
+		t := tVal.(*domain.Transform)
+		var hp, maxhp int32 = 500, 500
+		if hVal, okH := world.GetComponent(id, domain.Health{}); okH {
+			h := hVal.(*domain.Health)
+			hp, maxhp = h.Current, h.Max
+		}
+		snaps = append(snaps, domain.SpaceBaseSnapshot{
+			EntityID: id, SystemID: systemID, OwnerID: b.OwnerID,
+			X: t.X, Y: t.Y, Level: b.Level, Health: hp, MaxHealth: maxhp,
+		})
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := pgRepo.SaveSpaceBases(ctx, systemID, snaps); err != nil {
+		logger.Warn("Failed to persist space bases", zap.Error(err))
 	}
 }
 
