@@ -38,6 +38,10 @@ enum PacketType {
   C_VAULT_ACTION = 24;
   S_VAULT_STATUS = 25;
   C_JOIN_COMBAT_REQUEST = 26;
+
+  // Phase 1.5 fleet tactics
+  C_SET_FLEET_TACTICS = 27;
+  S_FLEET_STATUS = 28;
 }
 
 message Packet {
@@ -226,6 +230,35 @@ message FleetShipProto {
   int32 shield = 5;
   int32 max_shield = 6;
   int32 cargo_capacity = 7;
+  string role = 8;     // Phase 1.5 per-ship tactics
+  string strategy = 9;
+}
+
+// Phase 1.5: player assigns role/strategy per ship before battle.
+message FleetShipTactics {
+  uint32 ship_id = 1;
+  string role = 2;     // tank | dps | support | repair
+  string strategy = 3; // attack | defense | retreat
+}
+
+message SetFleetTactics {
+  repeated FleetShipTactics ships = 1;
+}
+
+// Server pushes the player's fleet roster (with current tactics) to the client.
+message FleetStatusShip {
+  uint32 ship_id = 1;
+  string ship_type = 2;
+  int32 health = 3;
+  int32 max_health = 4;
+  int32 shield = 5;
+  int32 max_shield = 6;
+  string role = 7;
+  string strategy = 8;
+}
+
+message FleetStatus {
+  repeated FleetStatusShip ships = 1;
 }
 
 message PlayerMigrationPayload {

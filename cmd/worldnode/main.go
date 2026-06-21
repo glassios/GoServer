@@ -281,6 +281,32 @@ func main() {
 					logger.Info("Created fresh player entity", zap.Uint64("playerID", uint64(playerID)), zap.String("name", string(cmd.Payload)))
 				}
 			}
+			// Push the fleet roster (with tactics) to the client on auth/reconnect.
+			sendFleetStatus(world, bus, playerID)
+
+		case protocol.PacketType_C_SET_FLEET_TACTICS:
+			var req protocol.SetFleetTactics
+			if err := proto.Unmarshal(cmd.Payload, &req); err == nil {
+				if flVal, ok := world.GetComponent(playerID, domain.Fleet{}); ok {
+					fleet := flVal.(*domain.Fleet)
+					for _, ts := range req.Ships {
+						for i := range fleet.Ships {
+							if fleet.Ships[i].ShipID == ts.ShipId {
+								if validCombatRole(ts.Role) {
+									fleet.Ships[i].Role = ts.Role
+								}
+								if validCombatStrategy(ts.Strategy) {
+									fleet.Ships[i].Strategy = ts.Strategy
+								}
+							}
+						}
+					}
+					sendFleetStatus(world, bus, playerID)
+					if playerRepo != nil {
+						savePlayerNow(world, playerRepo, playerID, logger)
+					}
+				}
+			}
 
 		case protocol.PacketType_C_JOIN_COMBAT_REQUEST:
 			var joinReq protocol.JoinCombatRequest
@@ -1006,6 +1032,92 @@ func sendSystemChat(bus messaging.MessageBus, playerID domain.EntityID, message 
 	}
 	packetData, _ := proto.Marshal(packet)
 	_ = bus.Publish(fmt.Sprintf("player.%d.response", playerID), packetData)
+}
+
+func validCombatRole(r string) bool {
+	switch r {
+	case domain.RoleTank, domain.RoleDPS, domain.RoleSupport, domain.RoleRepair:
+		return true
+	}
+	return false
+}
+
+func validCombatStrategy(s string) bool {
+	switch s {
+	case domain.StanceAttack, domain.StanceDefense, domain.StanceRetreat:
+		return true
+	}
+	return false
+}
+
+// sendFleetStatus pushes the player's fleet roster (with resolved tactics) to the client so
+// the Fleet Tactics panel can be populated. Roles/strategies are run through ResolveTactics so
+// the client always shows the concrete values a battle would use.
+func sendFleetStatus(world *ecs.World, bus messaging.MessageBus, playerID domain.EntityID) {
+	flVal, ok := world.GetComponent(playerID, domain.Fleet{})
+	if !ok {
+		return
+	}
+	fleet := flVal.(*domain.Fleet)
+	ships := make([]*protocol.FleetStatusShip, 0, len(fleet.Ships))
+	for i, s := range fleet.Ships {
+		role, strat := domain.ResolveTactics(s.Role, s.Strategy, i)
+		ships = append(ships, &protocol.FleetStatusShip{
+			ShipId:    s.ShipID,
+			ShipType:  s.ShipType,
+			Health:    s.Health,
+			MaxHealth: s.MaxHealth,
+			Shield:    s.Shield,
+			MaxShield: s.MaxShield,
+			Role:      role,
+			Strategy:  strat,
+		})
+	}
+	status := &protocol.FleetStatus{Ships: ships}
+	payload, _ := proto.Marshal(status)
+	packet := &protocol.Packet{Type: protocol.PacketType_S_FLEET_STATUS, Payload: payload}
+	packetData, _ := proto.Marshal(packet)
+	_ = bus.Publish(fmt.Sprintf("player.%d.response", playerID), packetData)
+}
+
+// savePlayerNow persists a single player's current state immediately (used after a tactics change).
+func savePlayerNow(world *ecs.World, repo domain.PlayerRepository, playerID domain.EntityID, logger *zap.Logger) {
+	pVal, ok := world.GetComponent(playerID, domain.PlayerData{})
+	if !ok {
+		return
+	}
+	player := pVal.(*domain.PlayerData)
+
+	tVal, foundT := world.GetComponent(playerID, domain.Transform{})
+	vVal, foundV := world.GetComponent(playerID, domain.Velocity{})
+	hVal, foundH := world.GetComponent(playerID, domain.Health{})
+	sVal, foundS := world.GetComponent(playerID, domain.Shield{})
+	wVal, foundW := world.GetComponent(playerID, domain.Weapon{})
+	cVal, foundC := world.GetComponent(playerID, domain.Cargo{})
+	cfgVal, foundCfg := world.GetComponent(playerID, domain.ShipConfig{})
+	fVal, foundF := world.GetComponent(playerID, domain.Fleet{})
+	if !foundT || !foundV || !foundH || !foundS || !foundW || !foundC || !foundCfg {
+		return
+	}
+
+	comps := domain.PlayerComponents{
+		Transform:  tVal.(*domain.Transform),
+		Velocity:   vVal.(*domain.Velocity),
+		Health:     hVal.(*domain.Health),
+		Shield:     sVal.(*domain.Shield),
+		Weapon:     wVal.(*domain.Weapon),
+		Cargo:      cVal.(*domain.Cargo),
+		ShipConfig: cfgVal.(*domain.ShipConfig),
+	}
+	if foundF {
+		comps.Fleet = fVal.(*domain.Fleet)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := repo.Save(ctx, player, comps); err != nil {
+		logger.Warn("Failed to persist player tactics", zap.Uint64("playerID", uint64(playerID)), zap.Error(err))
+	}
 }
 
 func sendInventoryUpdate(world *ecs.World, bus messaging.MessageBus, playerID domain.EntityID) {

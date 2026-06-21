@@ -121,6 +121,9 @@ type WSMessage struct {
 	VaultType    string      `json:"vault_type"`
 	ActionType   string      `json:"action_type"`
 	AlignWithFleetID uint64  `json:"align_with_fleet_id"`
+	ShipID       uint32      `json:"ship_id"`
+	Role         string      `json:"role"`
+	Strategy     string      `json:"strategy"`
 }
 
 func (m *WSMessage) GetTargetID() uint64 {
@@ -519,6 +522,11 @@ func main() {
 				if proto.Unmarshal(packet.Payload, &vaultStatus) == nil {
 					payloadJSON, jsonErr = mOpts.Marshal(&vaultStatus)
 				}
+			case protocol.PacketType_S_FLEET_STATUS:
+				var fleetStatus protocol.FleetStatus
+				if proto.Unmarshal(packet.Payload, &fleetStatus) == nil {
+					payloadJSON, jsonErr = mOpts.Marshal(&fleetStatus)
+				}
 			}
 
 			if len(payloadJSON) > 0 && jsonErr == nil {
@@ -692,6 +700,29 @@ func main() {
 						data, _ := proto.Marshal(serverCmd)
 						if pubErr := bus.Publish(fmt.Sprintf("system.%d.input", systemID), data); pubErr != nil {
 							logger.Error("Failed to publish WS join_combat to NATS", zap.Error(pubErr))
+						}
+					}
+
+				case "set_fleet_tactics":
+					wsPlayersMu.RLock()
+					wp, exists := wsConns[conn]
+					wsPlayersMu.RUnlock()
+					if exists {
+						systemID := routingTable.Get(wp.playerID)
+						setReq := &protocol.SetFleetTactics{
+							Ships: []*protocol.FleetShipTactics{
+								{ShipId: msg.ShipID, Role: msg.Role, Strategy: msg.Strategy},
+							},
+						}
+						payload, _ := proto.Marshal(setReq)
+						serverCmd := &protocol.ServerCommand{
+							PlayerId: uint64(wp.playerID),
+							Type:     protocol.PacketType_C_SET_FLEET_TACTICS,
+							Payload:  payload,
+						}
+						data, _ := proto.Marshal(serverCmd)
+						if pubErr := bus.Publish(fmt.Sprintf("system.%d.input", systemID), data); pubErr != nil {
+							logger.Error("Failed to publish WS set_fleet_tactics to NATS", zap.Error(pubErr))
 						}
 					}
 

@@ -243,6 +243,8 @@ func SerializePlayer(world *ecs.World, id domain.EntityID) *protocol.PlayerMigra
 				Shield:        ship.Shield,
 				MaxShield:     ship.MaxShield,
 				CargoCapacity: ship.CargoCapacity,
+				Role:          ship.Role,
+				Strategy:      ship.Strategy,
 			})
 		}
 	}
@@ -318,6 +320,8 @@ func DeserializePlayer(world *ecs.World, payload *protocol.PlayerMigrationPayloa
 				Shield:        fs.Shield,
 				MaxShield:     fs.MaxShield,
 				CargoCapacity: fs.CargoCapacity,
+				Role:          fs.Role,
+				Strategy:      fs.Strategy,
 			})
 		}
 	} else {

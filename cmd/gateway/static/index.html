@@ -536,6 +536,14 @@
             </div>
         </div>
 
+        <div>
+            <h3 style="font-size: 0.8rem; margin-bottom: 6px; color: var(--accent-cyan); display:flex; justify-content:space-between; align-items:center;">
+                <span>Тактика флота</span>
+                <button class="btn btn-action btn-secondary" style="margin-top:0; padding:2px 8px; font-size:0.65rem;" onclick="toggleFleetTactics()">Показать</button>
+            </h3>
+            <div id="fleet-tactics-panel" style="display:none; flex-direction:column; gap:4px; font-size:0.7rem; max-height:220px; overflow-y:auto;"></div>
+        </div>
+
         <div style="flex-grow: 1; display: flex; flex-direction: column;">
             <h3 style="font-size: 0.8rem; margin-bottom: 6px; color: var(--accent-cyan)">Server Event Log</h3>
             <div class="logs-box" id="event-logs">
@@ -792,6 +800,7 @@
     let currentSystemID = 1;
     let entities = new Map(); // EntityID -> EntityState
     let focusCounts = {};     // entityID -> number of attackers currently targeting it (focus-fire)
+    let fleetRoster = [];     // player's fleet ships with tactics (from S_FLEET_STATUS)
     let particles = [];
     let damageNumbers = [];
 
@@ -1010,6 +1019,9 @@
                 const ent = entities.get(targetID);
                 if (ent) updateTargetUI(ent);
             }
+        } else if (msg.type === 's_fleet_status' || msg.type === 'fleetstatus') {
+            fleetRoster = (msg.data && msg.data.ships) ? msg.data.ships : [];
+            renderFleetTacticsPanel();
         } else if (msg.type === 'chatmessage' || msg.type === 's_chat_message') {
             const sender = msg.data.sender || 'System';
             if (sender === 'System') {
@@ -1381,6 +1393,60 @@
             .catch(err => {
                 logEvent('Ошибка API: ' + err, 'combat');
             });
+    }
+
+    // ---- Fleet Tactics (Phase 1.5) ----
+    function toggleFleetTactics() {
+        const panel = document.getElementById('fleet-tactics-panel');
+        if (!panel) return;
+        panel.style.display = (panel.style.display === 'none') ? 'flex' : 'none';
+        renderFleetTacticsPanel();
+    }
+
+    const ROLE_OPTS = [
+        { v: 'tank', t: 'Танк' }, { v: 'dps', t: 'Дамаг' },
+        { v: 'support', t: 'Поддержка' }, { v: 'repair', t: 'Ремонт' }
+    ];
+    const STANCE_OPTS = [
+        { v: 'attack', t: 'Атака' }, { v: 'defense', t: 'Оборона' }, { v: 'retreat', t: 'Отступл.' }
+    ];
+
+    function renderFleetTacticsPanel() {
+        const panel = document.getElementById('fleet-tactics-panel');
+        if (!panel || panel.style.display === 'none') return;
+        if (!fleetRoster.length) {
+            panel.innerHTML = '<div style="color:var(--text-muted)">Нет данных о флоте</div>';
+            return;
+        }
+        let html = '';
+        fleetRoster.forEach(s => {
+            const roleSel = ROLE_OPTS.map(o => `<option value="${o.v}" ${o.v === s.role ? 'selected' : ''}>${o.t}</option>`).join('');
+            const stanceSel = STANCE_OPTS.map(o => `<option value="${o.v}" ${o.v === s.strategy ? 'selected' : ''}>${o.t}</option>`).join('');
+            html += `<div style="border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:5px; display:flex; flex-direction:column; gap:3px;">
+                <div style="display:flex; justify-content:space-between;"><span style="color:var(--accent-cyan)">${s.ship_type}</span><span style="color:var(--text-muted)">HP ${s.health}/${s.max_health}</span></div>
+                <div style="display:flex; gap:4px;">
+                    <select onchange="setShipTactics(${s.ship_id}, this.value, null)" style="flex:1; background:#10101e; color:#fff; border:1px solid rgba(255,255,255,0.15); border-radius:4px; font-size:0.65rem; padding:2px;">${roleSel}</select>
+                    <select onchange="setShipTactics(${s.ship_id}, null, this.value)" style="flex:1; background:#10101e; color:#fff; border:1px solid rgba(255,255,255,0.15); border-radius:4px; font-size:0.65rem; padding:2px;">${stanceSel}</select>
+                </div>
+            </div>`;
+        });
+        panel.innerHTML = html;
+    }
+
+    function setShipTactics(shipId, role, strategy) {
+        const ship = fleetRoster.find(s => s.ship_id === shipId);
+        if (!ship) return;
+        // Optimistically update local state; server echoes back an authoritative S_FLEET_STATUS.
+        if (role !== null) ship.role = role;
+        if (strategy !== null) ship.strategy = strategy;
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+                action: 'set_fleet_tactics',
+                ship_id: shipId,
+                role: ship.role,
+                strategy: ship.strategy
+            }));
+        }
     }
 
     // Switch systems tab

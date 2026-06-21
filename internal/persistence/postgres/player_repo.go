@@ -89,15 +89,15 @@ func (r *PostgresPlayerRepository) Save(ctx context.Context, player *domain.Play
 		}
 
 		stmt, err := tx.PrepareContext(ctx, `
-			INSERT INTO fleet_ships (owner_id, owner_type, ship_type, health, max_health, shield, max_shield, cargo_capacity)
-			VALUES ($1, 'player', $2, $3, $4, $5, $6, $7)`)
+			INSERT INTO fleet_ships (owner_id, owner_type, ship_type, health, max_health, shield, max_shield, cargo_capacity, role, strategy)
+			VALUES ($1, 'player', $2, $3, $4, $5, $6, $7, $8, $9)`)
 		if err != nil {
 			return fmt.Errorf("failed to prepare fleet insert: %w", err)
 		}
 		defer stmt.Close()
 
 		for _, s := range comps.Fleet.Ships {
-			_, err = stmt.ExecContext(ctx, player.AccountID, s.ShipType, s.Health, s.MaxHealth, s.Shield, s.MaxShield, s.CargoCapacity)
+			_, err = stmt.ExecContext(ctx, player.AccountID, s.ShipType, s.Health, s.MaxHealth, s.Shield, s.MaxShield, s.CargoCapacity, s.Role, s.Strategy)
 			if err != nil {
 				return fmt.Errorf("failed to insert fleet ship: %w", err)
 			}
@@ -163,7 +163,7 @@ func (r *PostgresPlayerRepository) Load(ctx context.Context, accountID uint64) (
 
 	// Query fleet ships
 	shipsQuery := `
-		SELECT ship_type, health, max_health, shield, max_shield, cargo_capacity
+		SELECT ship_type, health, max_health, shield, max_shield, cargo_capacity, role, strategy
 		FROM fleet_ships
 		WHERE owner_id = $1 AND owner_type = 'player'
 		ORDER BY id ASC;
@@ -174,9 +174,9 @@ func (r *PostgresPlayerRepository) Load(ctx context.Context, accountID uint64) (
 		defer rows.Close()
 		var sID uint32 = 1
 		for rows.Next() {
-			var sType string
+			var sType, role, strategy string
 			var hp, maxHp, sh, maxSh, capVal int32
-			if err := rows.Scan(&sType, &hp, &maxHp, &sh, &maxSh, &capVal); err == nil {
+			if err := rows.Scan(&sType, &hp, &maxHp, &sh, &maxSh, &capVal, &role, &strategy); err == nil {
 				ships = append(ships, domain.FleetShip{
 					ShipID:        sID,
 					ShipType:      sType,
@@ -185,6 +185,8 @@ func (r *PostgresPlayerRepository) Load(ctx context.Context, accountID uint64) (
 					Shield:        sh,
 					MaxShield:     maxSh,
 					CargoCapacity: capVal,
+					Role:          role,
+					Strategy:      strategy,
 				})
 				sID++
 			}
