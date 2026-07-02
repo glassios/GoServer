@@ -124,15 +124,15 @@ var StockHulls = []ShipHull{
 
 // StockWeapons is the canonical weapon catalog (weapon_id is the resolve key).
 var StockWeapons = []WeaponDefinition{
-	{ID: 1, WeaponID: WeaponLightLaser, Name: "Light Laser", WeaponType: "ENERGY", WeaponSize: "SMALL", OPCost: 5, DamagePerShot: 8, DamageType: "ENERGY", FluxCost: 6, Range: 450, Cooldown: 0.4},
-	{ID: 2, WeaponID: WeaponIRPulse, Name: "IR Pulse Laser", WeaponType: "ENERGY", WeaponSize: "SMALL", OPCost: 6, DamagePerShot: 12, DamageType: "ENERGY", FluxCost: 10, Range: 400, Cooldown: 0.6},
-	{ID: 3, WeaponID: WeaponLightAutocannon, Name: "Light Autocannon", WeaponType: "BALLISTIC", WeaponSize: "SMALL", OPCost: 6, DamagePerShot: 10, DamageType: "KINETIC", FluxCost: 8, Range: 500, Cooldown: 0.5},
-	{ID: 4, WeaponID: WeaponLightMortar, Name: "Light Mortar", WeaponType: "BALLISTIC", WeaponSize: "SMALL", OPCost: 5, DamagePerShot: 14, DamageType: "EXPLOSIVE", FluxCost: 9, Range: 350, Cooldown: 0.8},
-	{ID: 5, WeaponID: WeaponSwarmerSRM, Name: "Swarmer SRM", WeaponType: "MISSILE", WeaponSize: "SMALL", OPCost: 4, DamagePerShot: 20, DamageType: "EXPLOSIVE", FluxCost: 0, Range: 600, Cooldown: 2.0},
-	{ID: 6, WeaponID: WeaponHeavyBlaster, Name: "Heavy Blaster", WeaponType: "ENERGY", WeaponSize: "MEDIUM", OPCost: 12, DamagePerShot: 45, DamageType: "ENERGY", FluxCost: 45, Range: 400, Cooldown: 1.0, ModuleItem: "Heavy Blaster"},
-	{ID: 7, WeaponID: WeaponHeavyMauler, Name: "Heavy Mauler", WeaponType: "BALLISTIC", WeaponSize: "MEDIUM", OPCost: 12, DamagePerShot: 40, DamageType: "EXPLOSIVE", FluxCost: 30, Range: 700, Cooldown: 1.2, ModuleItem: "Heavy Mauler"},
-	{ID: 8, WeaponID: WeaponHellbore, Name: "Hellbore Cannon", WeaponType: "BALLISTIC", WeaponSize: "LARGE", OPCost: 22, DamagePerShot: 100, DamageType: "EXPLOSIVE", FluxCost: 80, Range: 900, Cooldown: 2.5, ModuleItem: "Hellbore Cannon"},
-	{ID: 9, WeaponID: WeaponMiningLaserFit, Name: "Mining Laser", WeaponType: "ENERGY", WeaponSize: "SMALL", OPCost: 3, DamagePerShot: 5, DamageType: "ENERGY", FluxCost: 4, Range: 300, Cooldown: 1.0},
+	{ID: 1, WeaponID: WeaponLightLaser, Name: "Light Laser", WeaponType: "ENERGY", WeaponSize: "SMALL", OPCost: 5, DamagePerShot: 8, DamageType: "ENERGY", FluxCost: 6, Range: 450, Cooldown: 0.4, Class: WeaponClassBeam},
+	{ID: 2, WeaponID: WeaponIRPulse, Name: "IR Pulse Laser", WeaponType: "ENERGY", WeaponSize: "SMALL", OPCost: 6, DamagePerShot: 12, DamageType: "ENERGY", FluxCost: 10, Range: 400, Cooldown: 0.6, Class: WeaponClassBeam},
+	{ID: 3, WeaponID: WeaponLightAutocannon, Name: "Light Autocannon", WeaponType: "BALLISTIC", WeaponSize: "SMALL", OPCost: 6, DamagePerShot: 10, DamageType: "KINETIC", FluxCost: 8, Range: 500, Cooldown: 0.5, Class: WeaponClassProjectile, ProjectileSpeed: 900},
+	{ID: 4, WeaponID: WeaponLightMortar, Name: "Light Mortar", WeaponType: "BALLISTIC", WeaponSize: "SMALL", OPCost: 5, DamagePerShot: 14, DamageType: "EXPLOSIVE", FluxCost: 9, Range: 350, Cooldown: 0.8, Class: WeaponClassProjectile, ProjectileSpeed: 480},
+	{ID: 5, WeaponID: WeaponSwarmerSRM, Name: "Swarmer SRM", WeaponType: "MISSILE", WeaponSize: "SMALL", OPCost: 4, DamagePerShot: 10, DamageType: "EXPLOSIVE", FluxCost: 0, Range: 600, Cooldown: 0.5, Class: WeaponClassMissile, ProjectileSpeed: 300, Magazine: 4, ReloadTime: 6.0, Barrels: 2, Guidance: "weave"},
+	{ID: 6, WeaponID: WeaponHeavyBlaster, Name: "Heavy Blaster", WeaponType: "ENERGY", WeaponSize: "MEDIUM", OPCost: 12, DamagePerShot: 45, DamageType: "ENERGY", FluxCost: 45, Range: 400, Cooldown: 1.0, ModuleItem: "Heavy Blaster", Class: WeaponClassBeam},
+	{ID: 7, WeaponID: WeaponHeavyMauler, Name: "Heavy Mauler", WeaponType: "BALLISTIC", WeaponSize: "MEDIUM", OPCost: 12, DamagePerShot: 40, DamageType: "EXPLOSIVE", FluxCost: 30, Range: 700, Cooldown: 1.2, ModuleItem: "Heavy Mauler", Class: WeaponClassProjectile, ProjectileSpeed: 1000},
+	{ID: 8, WeaponID: WeaponHellbore, Name: "Hellbore Cannon", WeaponType: "BALLISTIC", WeaponSize: "LARGE", OPCost: 22, DamagePerShot: 100, DamageType: "EXPLOSIVE", FluxCost: 80, Range: 900, Cooldown: 2.5, ModuleItem: "Hellbore Cannon", Class: WeaponClassProjectile, ProjectileSpeed: 700},
+	{ID: 9, WeaponID: WeaponMiningLaserFit, Name: "Mining Laser", WeaponType: "ENERGY", WeaponSize: "SMALL", OPCost: 3, DamagePerShot: 5, DamageType: "ENERGY", FluxCost: 4, Range: 300, Cooldown: 1.0, Class: WeaponClassBeam},
 }
 
 // StockHullmods is the canonical hullmod catalog. Only modifier keys that BakeShip reads
@@ -312,7 +312,10 @@ func ComputeStats(cfg *ShipConfiguration) BakedStats {
 	for _, slot := range hull.WeaponSlots {
 		if wid, ok := cfg.FittedWeapons[slot.SlotID]; ok {
 			if def := WeaponByID(wid); def != nil {
-				stats.Weapons = append(stats.Weapons, FittedWeaponState{SlotID: slot.SlotID, Definition: *def, Cooldown: 0, Ammo: 9999})
+				stats.Weapons = append(stats.Weapons, FittedWeaponState{
+					SlotID: slot.SlotID, Definition: *def, Cooldown: 0, Ammo: def.InitialAmmo(),
+					MountAngle: slot.Angle * degToRad, ArcHalf: MountArcHalf(slot.Mount),
+				})
 			}
 		}
 	}

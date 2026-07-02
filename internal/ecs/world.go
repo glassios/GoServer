@@ -191,7 +191,9 @@ func (w *World) Query(mask ComponentMask) []domain.EntityID {
 	w.mutex.RLock()
 	defer w.mutex.RUnlock()
 
-	var result []domain.EntityID
+	// Pre-size to the entity count so a hot per-tick query doesn't repeatedly grow
+	// (append doubling) and churn the heap.
+	result := make([]domain.EntityID, 0, len(w.entityMasks))
 	for id, entityMask := range w.entityMasks {
 		if (entityMask & mask) == mask {
 			result = append(result, id)

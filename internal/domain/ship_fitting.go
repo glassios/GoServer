@@ -42,7 +42,32 @@ type WeaponDefinition struct {
 	// is a "module": fitting it consumes one item from the player's cargo and unfitting returns it.
 	// Empty means a built-in/basic weapon that is always available.
 	ModuleItem string `json:"module_item"`
+	// Class (Phase B3) selects how the shot presents. Empty / "hitscan" = instant beam-line
+	// (default, unchanged balance). "projectile" = the shot travels: damage is still applied
+	// instantly on the server, but a fire event is streamed so the client draws the bolt flying
+	// (thin channel, IMPLEMENTATION_PLAN §2.2). ProjectileSpeed is world units/sec for that flight.
+	Class           string  `json:"class"`
+	ProjectileSpeed float32 `json:"projectile_speed"`
+	// Magazine + reload (Phase B5, turret rhythm): a weapon with Magazine>0 fires that many shots
+	// (at its Cooldown cadence) then must reload for ReloadTime seconds before it can fire again.
+	// Magazine==0 means no magazine (fires continuously, gated only by Cooldown) — the default.
+	Magazine   int32   `json:"magazine"`
+	ReloadTime float32 `json:"reload_time"`
+	// Barrels (Phase B5): shots discharged per trigger (a volley). 0/1 = single shot. A magazine
+	// round covers one trigger, so a Barrels-N mount fires N shots per round consumed.
+	Barrels int32 `json:"barrels"`
+	// Guidance (Phase B4, missile class only): "" = straight homing, "weave" = sinusoidal weave
+	// toward the target (harder for point-defense, swarm feel).
+	Guidance string `json:"guidance"`
 }
+
+// Weapon classes (Phase B3).
+const (
+	WeaponClassHitscan    = "hitscan"
+	WeaponClassProjectile = "projectile"
+	WeaponClassBeam       = "beam"    // continuous/pulse energy beam (instant-travel line, not a bolt)
+	WeaponClassMissile    = "missile" // guided munition: travels + homes (client-side cosmetic homing)
+)
 
 type Hullmod struct {
 	ID           uint32             `json:"id"`
@@ -80,8 +105,9 @@ type FluxState struct {
 	Current         float32
 	Capacity        float32
 	DissipationRate float32
-	Overloaded      bool // true while at max flux: shield drops and weapons can't fire until vented
-	Venting         bool // true while actively venting (fast flux dump, can't fire)
+	Overloaded      bool    // true while at max flux: shield drops and weapons can't fire
+	Venting         bool    // true while actively venting (fast flux dump, can't fire)
+	OverloadTimer   float32 // seconds remaining in a fixed-duration overload (Starsector-style); overload ends when it hits 0, flux resets to 0
 }
 
 // Damage types (Starsector-style).
@@ -137,10 +163,40 @@ func DamageMultiplier(damageType, layer string) float32 {
 }
 
 type FittedWeaponState struct {
-	SlotID     string
-	Definition WeaponDefinition
-	Cooldown   float32
-	Ammo       int32
+	SlotID      string
+	Definition  WeaponDefinition
+	Cooldown    float32
+	Ammo        int32   // shots left in the current magazine (Phase B5)
+	ReloadTimer float32 // seconds left until the magazine refills (0 = ready/not reloading)
+	// Per-mount firing arc (Phase B5): the mount can only fire when the target lies within ArcHalf
+	// radians of (hull facing + MountAngle). Turrets get a wide arc, hardpoints a narrow forward
+	// one, so ship facing matters. ArcHalf >= π means "no gate" (fires in any direction).
+	MountAngle float32
+	ArcHalf    float32
+}
+
+const degToRad = 0.017453292519943295
+
+// MountArcHalf returns the half firing arc (radians) for a mount type: hardpoints are fixed and
+// fire in a narrow forward cone; turrets traverse over a wide arc; anything else is unrestricted.
+func MountArcHalf(mount string) float32 {
+	switch mount {
+	case "HARDPOINT":
+		return 45 * degToRad // 90° cone
+	case "TURRET":
+		return 135 * degToRad // 270° coverage
+	default:
+		return 180 * degToRad // full (no gate)
+	}
+}
+
+// InitialAmmo is the round count a freshly-baked mount starts with: a full magazine for magazine
+// weapons, or an effectively unlimited count for continuous ones.
+func (d *WeaponDefinition) InitialAmmo() int32 {
+	if d.Magazine > 0 {
+		return d.Magazine
+	}
+	return 9999
 }
 
 type WeaponGroup struct {

@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "id": "default-fighter",
+  "name": "default-fighter",
+  "hull": {
+    "size": [
+      6,
+      2.5
+    ],
+    "texture": "/m1.png",
+    "normalMap": "/m1n.png",
+    "roughness": 0.4,
+    "metalness": 0.6
+  },
+  "engines": [
+    {
+      "id": "left-outer",
+      "engineAsset": "prefubs/Engines/center_Real_Thruster_v1.json",
+      "mountOverride": {
+        "side": "left",
+        "lateralOffset": -0.645
+      },
+      "inputBindings": {
+        "thrust": [
+          "w",
+          "d"
+        ],
+        "reverse": [
+          "s"
+        ],
+        "turnAssistLeft": [
+          "d"
+        ]
+      }
+    },
+    {
+      "id": "left-inner",
+      "engineAsset": "prefubs/Engines/center_Real_Thruster_v1.json",
+      "mountOverride": {
+        "side": "left",
+        "lateralOffset": -0.38
+      },
+      "inputBindings": {
+        "thrust": [
+          "w",
+          "d"
+        ],
+        "reverse": [
+          "s"
+        ],
+        "turnAssistLeft": [
+          "d"
+        ]
+      }
+    },
+    {
+      "id": "right-inner",
+      "engineAsset": "prefubs/Engines/center_Real_Thruster_v1.json",
+      "mountOverride": {
+        "side": "right",
+        "lateralOffset": 0.38
+      },
+      "inputBindings": {
+        "thrust": [
+          "w",
+          "a"
+        ],
+        "reverse": [
+          "s"
+        ],
+        "turnAssistRight": [
+          "a"
+        ]
+      }
+    },
+    {
+      "id": "right-outer",
+      "engineAsset": "prefubs/Engines/center_Real_Thruster_v1.json",
+      "mountOverride": {
+        "side": "right",
+        "lateralOffset": 0.645
+      },
+      "inputBindings": {
+        "thrust": [
+          "w",
+          "a"
+        ],
+        "reverse": [
+          "s"
+        ],
+        "turnAssistRight": [
+          "a"
+        ]
+      }
+    },
+    {
+      "id": "engine-5",
+      "engineAsset": "prefubs/Engines/center_Real_Thruster_v0.json",
+      "mountOverride": {
+        "side": "center",
+        "lateralOffset": 0,
+        "localPosition": {
+          "x": 0.4,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "inputBindings": {
+        "thrust": [
+          "w"
+        ],
+        "reverse": [
+          "s"
+        ]
+      }
+    }
+  ],
+  "weapons": [
+    {
+      "id": "main-beam",
+      "turretAsset": "prefubs/Turrets/Laser_Turret_v0.json",
+      "scale": 0.18,
+      "mount": {
+        "localPosition": {
+          "x": 1.75,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": 0
+      }
+    },
+    {
+      "id": "blaster-left",
+      "turretAsset": "prefubs/Turrets/BeamTurret_v0.json",
+      "scale": 0.18,
+      "mount": {
+        "localPosition": {
+          "x": 1.12,
+          "y": 0.35,
+          "z": 0
+        },
+        "rotation": 0.6981317007977318
+      }
+    },
+    {
+      "id": "blaster-right",
+      "turretAsset": "prefubs/Turrets/BeamTurret_v0.json",
+      "scale": 0.18,
+      "mount": {
+        "localPosition": {
+          "x": 1.12,
+          "y": -0.35,
+          "z": 0
+        },
+        "rotation": -0.6981317007977318
+      }
+    }
+  ]
+}

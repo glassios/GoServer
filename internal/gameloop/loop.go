@@ -2,6 +2,8 @@ package gameloop
 
 import (
 	"context"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,9 +30,17 @@ type GameLoop struct {
 	isRunning      bool
 	runningMutex   sync.RWMutex
 	accumulatedTime float64
-	
+
+	// Per-system timing of the most recent update(), reused each tick (no per-tick alloc).
+	sysTimings []systemTiming
+
 	// Hook for snapshot generation (injected from outside or default)
 	OnSnapshot func(tick uint64)
+}
+
+type systemTiming struct {
+	name string
+	dur  time.Duration
 }
 
 func NewGameLoop(world *ecs.World, systems []ecs.System, tickRate int, logger *zap.Logger) *GameLoop {
@@ -80,9 +90,17 @@ func (g *GameLoop) Run(ctx context.Context) {
 			start := time.Now()
 			tickCount++
 
+			tCmd := time.Now()
 			g.processCommands()
+			cmdDur := time.Since(tCmd)
+
+			tUpd := time.Now()
 			g.update(dt)
+			updDur := time.Since(tUpd)
+
+			tSnap := time.Now()
 			g.generateSnapshots(tickCount)
+			snapDur := time.Since(tSnap)
 
 			duration := time.Since(start)
 			g.metrics.Record(duration)
@@ -96,12 +114,18 @@ func (g *GameLoop) Run(ctx context.Context) {
 				)
 			}
 
-			// Warning if tick took longer than allocated time
+			// Warning if tick took longer than allocated time — log the phase + per-system
+			// breakdown so the offender is identifiable instead of guessed.
 			if duration > g.tickDuration {
 				g.logger.Warn("Tick took longer than allocated interval!",
 					zap.Uint64("tick", tickCount),
 					zap.Duration("duration", duration),
 					zap.Duration("allocated", g.tickDuration),
+					zap.Int("entities", g.world.EntityCount()),
+					zap.Duration("commands", cmdDur),
+					zap.Duration("update", updDur),
+					zap.Duration("snapshot", snapDur),
+					zap.String("systems", g.lastSystemTimings()),
 				)
 			}
 		}
@@ -132,12 +156,23 @@ func (g *GameLoop) handleCommand(cmd Command) {
 				v.X = vel.X
 				v.Y = vel.Y
 			}
-			// Если игрок делает ручное движение на карте, отменяем преследование/атаку
+			// Ручное движение на карте отменяет все текущие приказы: атаку, добычу и эскорт.
 			wVal, foundW := g.world.GetComponent(cmd.PlayerID, domain.Weapon{})
 			if foundW {
 				weapon := wVal.(*domain.Weapon)
 				weapon.Active = false
 				weapon.TargetID = 0
+			}
+			if lVal, foundL := g.world.GetComponent(cmd.PlayerID, domain.MiningLaser{}); foundL {
+				laser := lVal.(*domain.MiningLaser)
+				laser.Active = false
+				laser.TargetID = 0
+			}
+			if _, hasFollow := g.world.GetComponent(cmd.PlayerID, domain.FollowOrder{}); hasFollow {
+				g.world.RemoveComponent(cmd.PlayerID, domain.FollowOrder{})
+			}
+			if _, hasPending := g.world.GetComponent(cmd.PlayerID, domain.PendingJoin{}); hasPending {
+				g.world.RemoveComponent(cmd.PlayerID, domain.PendingJoin{})
 			}
 		}
 	case "shoot":
@@ -151,6 +186,17 @@ func (g *GameLoop) handleCommand(cmd Command) {
 				weapon.Active = payload.Active
 				weapon.TargetID = payload.TargetID
 			}
+			// Открытие огня отменяет добычу и эскорт.
+			if payload.Active {
+				if lVal, foundL := g.world.GetComponent(cmd.PlayerID, domain.MiningLaser{}); foundL {
+					laser := lVal.(*domain.MiningLaser)
+					laser.Active = false
+					laser.TargetID = 0
+				}
+				if _, hasFollow := g.world.GetComponent(cmd.PlayerID, domain.FollowOrder{}); hasFollow {
+					g.world.RemoveComponent(cmd.PlayerID, domain.FollowOrder{})
+				}
+			}
 		}
 	case "mine":
 		if payload, ok := cmd.Payload.(struct {
@@ -163,15 +209,52 @@ func (g *GameLoop) handleCommand(cmd Command) {
 				laser.Active = payload.Active
 				laser.TargetID = payload.TargetID
 			}
+			// Начало добычи отменяет атаку и эскорт.
+			if payload.Active {
+				if wVal, foundW := g.world.GetComponent(cmd.PlayerID, domain.Weapon{}); foundW {
+					weapon := wVal.(*domain.Weapon)
+					weapon.Active = false
+					weapon.TargetID = 0
+				}
+				if _, hasFollow := g.world.GetComponent(cmd.PlayerID, domain.FollowOrder{}); hasFollow {
+					g.world.RemoveComponent(cmd.PlayerID, domain.FollowOrder{})
+				}
+			}
 		}
 	}
 }
 
 func (g *GameLoop) update(dt float64) {
 	g.accumulatedTime += dt
-	for _, sys := range g.scheduler.GetSystems() {
+	systems := g.scheduler.GetSystems()
+	g.sysTimings = g.sysTimings[:0]
+	for _, sys := range systems {
+		s := time.Now()
 		sys.Update(g.world, dt)
+		g.sysTimings = append(g.sysTimings, systemTiming{sys.Name(), time.Since(s)})
 	}
+}
+
+// lastSystemTimings renders the slowest systems from the most recent update() as a
+// compact "Name=1.2ms, ..." string (top 5), for the slow-tick warning log.
+func (g *GameLoop) lastSystemTimings() string {
+	t := make([]systemTiming, len(g.sysTimings))
+	copy(t, g.sysTimings)
+	sort.Slice(t, func(i, j int) bool { return t[i].dur > t[j].dur })
+
+	var b strings.Builder
+	for i, st := range t {
+		if i >= 5 {
+			break
+		}
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(st.name)
+		b.WriteByte('=')
+		b.WriteString(st.dur.String())
+	}
+	return b.String()
 }
 
 func (g *GameLoop) generateSnapshots(tick uint64) {

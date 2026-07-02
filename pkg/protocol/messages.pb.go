@@ -74,6 +74,23 @@ const (
 	PacketType_C_UPGRADE_BASE PacketType = 38
 	// Phase 5 planets
 	PacketType_C_DEVELOP_PLANET PacketType = 39
+	// Inventory: jettison cargo into space as a loot container
+	PacketType_C_JETTISON_INPUT PacketType = 40
+	// Context actions on a selected object (server-driven action list)
+	PacketType_C_QUERY_ACTIONS      PacketType = 41
+	PacketType_S_TARGET_ACTIONS     PacketType = 42
+	PacketType_C_ATTACK_NPC_REQUEST PacketType = 43
+	PacketType_C_SET_FOLLOW         PacketType = 44
+	PacketType_C_HAIL               PacketType = 45
+	PacketType_S_HAIL_RESPONSE      PacketType = 46
+	// Scan a loot container to reveal its contents
+	PacketType_C_SCAN_CONTAINER     PacketType = 47
+	PacketType_S_CONTAINER_CONTENTS PacketType = 48
+	// Pre-battle fleet formation (rank/column battle line)
+	PacketType_C_SET_FLEET_FORMATION PacketType = 49
+	// Colony overview (owned space bases + developed planets)
+	PacketType_C_GET_COLONIES    PacketType = 50
+	PacketType_S_COLONIES_STATUS PacketType = 51
 )
 
 // Enum value maps for PacketType.
@@ -119,6 +136,18 @@ var (
 		37: "C_BUILD_BASE",
 		38: "C_UPGRADE_BASE",
 		39: "C_DEVELOP_PLANET",
+		40: "C_JETTISON_INPUT",
+		41: "C_QUERY_ACTIONS",
+		42: "S_TARGET_ACTIONS",
+		43: "C_ATTACK_NPC_REQUEST",
+		44: "C_SET_FOLLOW",
+		45: "C_HAIL",
+		46: "S_HAIL_RESPONSE",
+		47: "C_SCAN_CONTAINER",
+		48: "S_CONTAINER_CONTENTS",
+		49: "C_SET_FLEET_FORMATION",
+		50: "C_GET_COLONIES",
+		51: "S_COLONIES_STATUS",
 	}
 	PacketType_value = map[string]int32{
 		"PACKET_UNKNOWN":         0,
@@ -161,6 +190,18 @@ var (
 		"C_BUILD_BASE":           37,
 		"C_UPGRADE_BASE":         38,
 		"C_DEVELOP_PLANET":       39,
+		"C_JETTISON_INPUT":       40,
+		"C_QUERY_ACTIONS":        41,
+		"S_TARGET_ACTIONS":       42,
+		"C_ATTACK_NPC_REQUEST":   43,
+		"C_SET_FOLLOW":           44,
+		"C_HAIL":                 45,
+		"S_HAIL_RESPONSE":        46,
+		"C_SCAN_CONTAINER":       47,
+		"S_CONTAINER_CONTENTS":   48,
+		"C_SET_FLEET_FORMATION":  49,
+		"C_GET_COLONIES":         50,
+		"S_COLONIES_STATUS":      51,
 	}
 )
 
@@ -807,7 +848,17 @@ type EntitySnapshot struct {
 	AssistTargetId uint64 `protobuf:"varint,48,opt,name=assist_target_id,json=assistTargetId,proto3" json:"assist_target_id,omitempty"` // ally being repaired/supported this tick
 	AssistType     string `protobuf:"bytes,49,opt,name=assist_type,json=assistType,proto3" json:"assist_type,omitempty"`                // "repair" | "support" (for the assist beam color)
 	// Phase 5 space bases
-	BaseLevel     int32 `protobuf:"varint,50,opt,name=base_level,json=baseLevel,proto3" json:"base_level,omitempty"` // level of a SpaceBase entity
+	BaseLevel int32 `protobuf:"varint,50,opt,name=base_level,json=baseLevel,proto3" json:"base_level,omitempty"` // level of a SpaceBase entity
+	// Directional shields (combat): arc coverage in degrees (>=360 = omni/full bubble) and the
+	// world-space heading the shield is held toward (radians). For client shield-arc rendering.
+	ShieldArc    float32 `protobuf:"fixed32,51,opt,name=shield_arc,json=shieldArc,proto3" json:"shield_arc,omitempty"`
+	ShieldFacing float32 `protobuf:"fixed32,52,opt,name=shield_facing,json=shieldFacing,proto3" json:"shield_facing,omitempty"`
+	// Missile subsystem hits (Phase B4): true while this ship's engines/weapons are knocked out.
+	EngineHit bool `protobuf:"varint,53,opt,name=engine_hit,json=engineHit,proto3" json:"engine_hit,omitempty"`
+	WeaponHit bool `protobuf:"varint,54,opt,name=weapon_hit,json=weaponHit,proto3" json:"weapon_hit,omitempty"`
+	// Overload lockout remaining (Phase D): seconds left on a fixed-duration overload (0 = not
+	// overloaded). Lets the client show an overload countdown rather than just a boolean.
+	OverloadTimer float32 `protobuf:"fixed32,55,opt,name=overload_timer,json=overloadTimer,proto3" json:"overload_timer,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1192,17 +1243,245 @@ func (x *EntitySnapshot) GetBaseLevel() int32 {
 	return 0
 }
 
+func (x *EntitySnapshot) GetShieldArc() float32 {
+	if x != nil {
+		return x.ShieldArc
+	}
+	return 0
+}
+
+func (x *EntitySnapshot) GetShieldFacing() float32 {
+	if x != nil {
+		return x.ShieldFacing
+	}
+	return 0
+}
+
+func (x *EntitySnapshot) GetEngineHit() bool {
+	if x != nil {
+		return x.EngineHit
+	}
+	return false
+}
+
+func (x *EntitySnapshot) GetWeaponHit() bool {
+	if x != nil {
+		return x.WeaponHit
+	}
+	return false
+}
+
+func (x *EntitySnapshot) GetOverloadTimer() float32 {
+	if x != nil {
+		return x.OverloadTimer
+	}
+	return 0
+}
+
+// FireEvent (Phase B3): a weapon discharged a traveling shot this tick. Damage is applied
+// authoritatively/instantly by the server; this is a thin-channel cosmetic hint so the client can
+// draw the bolt flying from (origin) toward (target). Streamed inside the tick snapshot.
+type FireEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AttackerId    uint64                 `protobuf:"varint,1,opt,name=attacker_id,json=attackerId,proto3" json:"attacker_id,omitempty"`
+	TargetId      uint64                 `protobuf:"varint,2,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	OriginX       float32                `protobuf:"fixed32,3,opt,name=origin_x,json=originX,proto3" json:"origin_x,omitempty"`
+	OriginY       float32                `protobuf:"fixed32,4,opt,name=origin_y,json=originY,proto3" json:"origin_y,omitempty"`
+	TargetX       float32                `protobuf:"fixed32,5,opt,name=target_x,json=targetX,proto3" json:"target_x,omitempty"`
+	TargetY       float32                `protobuf:"fixed32,6,opt,name=target_y,json=targetY,proto3" json:"target_y,omitempty"`
+	Speed         float32                `protobuf:"fixed32,7,opt,name=speed,proto3" json:"speed,omitempty"`                              // world units/sec (client flight speed)
+	DamageType    string                 `protobuf:"bytes,8,opt,name=damage_type,json=damageType,proto3" json:"damage_type,omitempty"`    // KINETIC | EXPLOSIVE | ENERGY | FRAGMENTATION (bolt tint)
+	WeaponClass   string                 `protobuf:"bytes,9,opt,name=weapon_class,json=weaponClass,proto3" json:"weapon_class,omitempty"` // "projectile" (beam/missile later)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FireEvent) Reset() {
+	*x = FireEvent{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FireEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FireEvent) ProtoMessage() {}
+
+func (x *FireEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FireEvent.ProtoReflect.Descriptor instead.
+func (*FireEvent) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *FireEvent) GetAttackerId() uint64 {
+	if x != nil {
+		return x.AttackerId
+	}
+	return 0
+}
+
+func (x *FireEvent) GetTargetId() uint64 {
+	if x != nil {
+		return x.TargetId
+	}
+	return 0
+}
+
+func (x *FireEvent) GetOriginX() float32 {
+	if x != nil {
+		return x.OriginX
+	}
+	return 0
+}
+
+func (x *FireEvent) GetOriginY() float32 {
+	if x != nil {
+		return x.OriginY
+	}
+	return 0
+}
+
+func (x *FireEvent) GetTargetX() float32 {
+	if x != nil {
+		return x.TargetX
+	}
+	return 0
+}
+
+func (x *FireEvent) GetTargetY() float32 {
+	if x != nil {
+		return x.TargetY
+	}
+	return 0
+}
+
+func (x *FireEvent) GetSpeed() float32 {
+	if x != nil {
+		return x.Speed
+	}
+	return 0
+}
+
+func (x *FireEvent) GetDamageType() string {
+	if x != nil {
+		return x.DamageType
+	}
+	return ""
+}
+
+func (x *FireEvent) GetWeaponClass() string {
+	if x != nil {
+		return x.WeaponClass
+	}
+	return ""
+}
+
+// MissileState (Phase B4): authoritative position of a live flying missile in a combat instance.
+// Thin channel — a handful of fields per missile, streamed each tick so the client can render true
+// missile positions and honest interception (a missile that vanishes from the list was shot down or
+// hit). Separate from EntitySnapshot so missiles don't go through the ship-rendering path.
+type MissileState struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	X             float32                `protobuf:"fixed32,2,opt,name=x,proto3" json:"x,omitempty"`
+	Y             float32                `protobuf:"fixed32,3,opt,name=y,proto3" json:"y,omitempty"`
+	Rotation      float32                `protobuf:"fixed32,4,opt,name=rotation,proto3" json:"rotation,omitempty"`
+	DamageType    string                 `protobuf:"bytes,5,opt,name=damage_type,json=damageType,proto3" json:"damage_type,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MissileState) Reset() {
+	*x = MissileState{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MissileState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MissileState) ProtoMessage() {}
+
+func (x *MissileState) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MissileState.ProtoReflect.Descriptor instead.
+func (*MissileState) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *MissileState) GetId() uint64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+func (x *MissileState) GetX() float32 {
+	if x != nil {
+		return x.X
+	}
+	return 0
+}
+
+func (x *MissileState) GetY() float32 {
+	if x != nil {
+		return x.Y
+	}
+	return 0
+}
+
+func (x *MissileState) GetRotation() float32 {
+	if x != nil {
+		return x.Rotation
+	}
+	return 0
+}
+
+func (x *MissileState) GetDamageType() string {
+	if x != nil {
+		return x.DamageType
+	}
+	return ""
+}
+
 type WorldSnapshot struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Tick          uint64                 `protobuf:"varint,1,opt,name=tick,proto3" json:"tick,omitempty"`
 	Entities      []*EntitySnapshot      `protobuf:"bytes,2,rep,name=entities,proto3" json:"entities,omitempty"`
+	FireEvents    []*FireEvent           `protobuf:"bytes,3,rep,name=fire_events,json=fireEvents,proto3" json:"fire_events,omitempty"` // weapon discharges this tick (combat instances only)
+	Missiles      []*MissileState        `protobuf:"bytes,4,rep,name=missiles,proto3" json:"missiles,omitempty"`                       // live flying missiles this tick (combat instances only)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *WorldSnapshot) Reset() {
 	*x = WorldSnapshot{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[11]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1214,7 +1493,7 @@ func (x *WorldSnapshot) String() string {
 func (*WorldSnapshot) ProtoMessage() {}
 
 func (x *WorldSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[11]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1227,7 +1506,7 @@ func (x *WorldSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorldSnapshot.ProtoReflect.Descriptor instead.
 func (*WorldSnapshot) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{11}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *WorldSnapshot) GetTick() uint64 {
@@ -1244,6 +1523,20 @@ func (x *WorldSnapshot) GetEntities() []*EntitySnapshot {
 	return nil
 }
 
+func (x *WorldSnapshot) GetFireEvents() []*FireEvent {
+	if x != nil {
+		return x.FireEvents
+	}
+	return nil
+}
+
+func (x *WorldSnapshot) GetMissiles() []*MissileState {
+	if x != nil {
+		return x.Missiles
+	}
+	return nil
+}
+
 type DeltaSnapshot struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	Tick              uint64                 `protobuf:"varint,1,opt,name=tick,proto3" json:"tick,omitempty"`
@@ -1255,7 +1548,7 @@ type DeltaSnapshot struct {
 
 func (x *DeltaSnapshot) Reset() {
 	*x = DeltaSnapshot{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[12]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1267,7 +1560,7 @@ func (x *DeltaSnapshot) String() string {
 func (*DeltaSnapshot) ProtoMessage() {}
 
 func (x *DeltaSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[12]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1280,7 +1573,7 @@ func (x *DeltaSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeltaSnapshot.ProtoReflect.Descriptor instead.
 func (*DeltaSnapshot) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{12}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *DeltaSnapshot) GetTick() uint64 {
@@ -1316,7 +1609,7 @@ type DamageEvent struct {
 
 func (x *DamageEvent) Reset() {
 	*x = DamageEvent{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[13]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1328,7 +1621,7 @@ func (x *DamageEvent) String() string {
 func (*DamageEvent) ProtoMessage() {}
 
 func (x *DamageEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[13]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1341,7 +1634,7 @@ func (x *DamageEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DamageEvent.ProtoReflect.Descriptor instead.
 func (*DamageEvent) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{13}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *DamageEvent) GetAttackerId() uint64 {
@@ -1381,7 +1674,7 @@ type DeathEvent struct {
 
 func (x *DeathEvent) Reset() {
 	*x = DeathEvent{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[14]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1393,7 +1686,7 @@ func (x *DeathEvent) String() string {
 func (*DeathEvent) ProtoMessage() {}
 
 func (x *DeathEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[14]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1406,7 +1699,7 @@ func (x *DeathEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeathEvent.ProtoReflect.Descriptor instead.
 func (*DeathEvent) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{14}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *DeathEvent) GetEntityId() uint64 {
@@ -1426,7 +1719,7 @@ type ChatMessage struct {
 
 func (x *ChatMessage) Reset() {
 	*x = ChatMessage{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[15]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1438,7 +1731,7 @@ func (x *ChatMessage) String() string {
 func (*ChatMessage) ProtoMessage() {}
 
 func (x *ChatMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[15]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1451,7 +1744,7 @@ func (x *ChatMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatMessage.ProtoReflect.Descriptor instead.
 func (*ChatMessage) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{15}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ChatMessage) GetSender() string {
@@ -1479,7 +1772,7 @@ type MarketItem struct {
 
 func (x *MarketItem) Reset() {
 	*x = MarketItem{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[16]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1491,7 +1784,7 @@ func (x *MarketItem) String() string {
 func (*MarketItem) ProtoMessage() {}
 
 func (x *MarketItem) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[16]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1504,7 +1797,7 @@ func (x *MarketItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MarketItem.ProtoReflect.Descriptor instead.
 func (*MarketItem) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{16}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *MarketItem) GetResource() string {
@@ -1537,7 +1830,7 @@ type MarketData struct {
 
 func (x *MarketData) Reset() {
 	*x = MarketData{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[17]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1549,7 +1842,7 @@ func (x *MarketData) String() string {
 func (*MarketData) ProtoMessage() {}
 
 func (x *MarketData) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[17]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1562,7 +1855,7 @@ func (x *MarketData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MarketData.ProtoReflect.Descriptor instead.
 func (*MarketData) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{17}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *MarketData) GetItems() []*MarketItem {
@@ -1592,7 +1885,7 @@ type ItemInstanceProto struct {
 
 func (x *ItemInstanceProto) Reset() {
 	*x = ItemInstanceProto{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[18]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1604,7 +1897,7 @@ func (x *ItemInstanceProto) String() string {
 func (*ItemInstanceProto) ProtoMessage() {}
 
 func (x *ItemInstanceProto) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[18]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1617,7 +1910,7 @@ func (x *ItemInstanceProto) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ItemInstanceProto.ProtoReflect.Descriptor instead.
 func (*ItemInstanceProto) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{18}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ItemInstanceProto) GetId() uint64 {
@@ -1714,7 +2007,7 @@ type InventoryUpdate struct {
 
 func (x *InventoryUpdate) Reset() {
 	*x = InventoryUpdate{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[19]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1726,7 +2019,7 @@ func (x *InventoryUpdate) String() string {
 func (*InventoryUpdate) ProtoMessage() {}
 
 func (x *InventoryUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[19]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1739,7 +2032,7 @@ func (x *InventoryUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InventoryUpdate.ProtoReflect.Descriptor instead.
 func (*InventoryUpdate) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{19}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *InventoryUpdate) GetCredits() int64 {
@@ -1765,7 +2058,7 @@ type Pong struct {
 
 func (x *Pong) Reset() {
 	*x = Pong{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[20]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1777,7 +2070,7 @@ func (x *Pong) String() string {
 func (*Pong) ProtoMessage() {}
 
 func (x *Pong) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[20]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1790,7 +2083,7 @@ func (x *Pong) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Pong.ProtoReflect.Descriptor instead.
 func (*Pong) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{20}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *Pong) GetTimestamp() float64 {
@@ -1811,7 +2104,7 @@ type ServerCommand struct {
 
 func (x *ServerCommand) Reset() {
 	*x = ServerCommand{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[21]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1823,7 +2116,7 @@ func (x *ServerCommand) String() string {
 func (*ServerCommand) ProtoMessage() {}
 
 func (x *ServerCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[21]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1836,7 +2129,7 @@ func (x *ServerCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerCommand.ProtoReflect.Descriptor instead.
 func (*ServerCommand) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{21}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ServerCommand) GetPlayerId() uint64 {
@@ -1884,7 +2177,7 @@ type FleetShipProto struct {
 
 func (x *FleetShipProto) Reset() {
 	*x = FleetShipProto{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[22]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1896,7 +2189,7 @@ func (x *FleetShipProto) String() string {
 func (*FleetShipProto) ProtoMessage() {}
 
 func (x *FleetShipProto) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[22]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1909,7 +2202,7 @@ func (x *FleetShipProto) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FleetShipProto.ProtoReflect.Descriptor instead.
 func (*FleetShipProto) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{22}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *FleetShipProto) GetShipId() uint32 {
@@ -2029,7 +2322,7 @@ type FleetShipTactics struct {
 
 func (x *FleetShipTactics) Reset() {
 	*x = FleetShipTactics{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[23]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2041,7 +2334,7 @@ func (x *FleetShipTactics) String() string {
 func (*FleetShipTactics) ProtoMessage() {}
 
 func (x *FleetShipTactics) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[23]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2054,7 +2347,7 @@ func (x *FleetShipTactics) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FleetShipTactics.ProtoReflect.Descriptor instead.
 func (*FleetShipTactics) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{23}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *FleetShipTactics) GetShipId() uint32 {
@@ -2087,7 +2380,7 @@ type SetFleetTactics struct {
 
 func (x *SetFleetTactics) Reset() {
 	*x = SetFleetTactics{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[24]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2099,7 +2392,7 @@ func (x *SetFleetTactics) String() string {
 func (*SetFleetTactics) ProtoMessage() {}
 
 func (x *SetFleetTactics) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[24]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2112,7 +2405,7 @@ func (x *SetFleetTactics) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetFleetTactics.ProtoReflect.Descriptor instead.
 func (*SetFleetTactics) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{24}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *SetFleetTactics) GetShips() []*FleetShipTactics {
@@ -2147,13 +2440,16 @@ type FleetStatusShip struct {
 	PreviewMaxSpeed        float32           `protobuf:"fixed32,19,opt,name=preview_max_speed,json=previewMaxSpeed,proto3" json:"preview_max_speed,omitempty"`
 	PreviewMaxFlux         float32           `protobuf:"fixed32,20,opt,name=preview_max_flux,json=previewMaxFlux,proto3" json:"preview_max_flux,omitempty"`
 	PreviewFluxDissipation float32           `protobuf:"fixed32,21,opt,name=preview_flux_dissipation,json=previewFluxDissipation,proto3" json:"preview_flux_dissipation,omitempty"`
-	unknownFields          protoimpl.UnknownFields
-	sizeCache              protoimpl.SizeCache
+	// Pre-battle formation slot (client renders the battle-line grid from these).
+	FormationRank int32 `protobuf:"varint,22,opt,name=formation_rank,json=formationRank,proto3" json:"formation_rank,omitempty"`
+	FormationCol  int32 `protobuf:"varint,23,opt,name=formation_col,json=formationCol,proto3" json:"formation_col,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *FleetStatusShip) Reset() {
 	*x = FleetStatusShip{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[25]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2165,7 +2461,7 @@ func (x *FleetStatusShip) String() string {
 func (*FleetStatusShip) ProtoMessage() {}
 
 func (x *FleetStatusShip) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[25]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2178,7 +2474,7 @@ func (x *FleetStatusShip) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FleetStatusShip.ProtoReflect.Descriptor instead.
 func (*FleetStatusShip) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{25}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *FleetStatusShip) GetShipId() uint32 {
@@ -2328,6 +2624,20 @@ func (x *FleetStatusShip) GetPreviewFluxDissipation() float32 {
 	return 0
 }
 
+func (x *FleetStatusShip) GetFormationRank() int32 {
+	if x != nil {
+		return x.FormationRank
+	}
+	return 0
+}
+
+func (x *FleetStatusShip) GetFormationCol() int32 {
+	if x != nil {
+		return x.FormationCol
+	}
+	return 0
+}
+
 type FleetStatus struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Ships         []*FleetStatusShip     `protobuf:"bytes,1,rep,name=ships,proto3" json:"ships,omitempty"`
@@ -2337,7 +2647,7 @@ type FleetStatus struct {
 
 func (x *FleetStatus) Reset() {
 	*x = FleetStatus{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[26]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2349,7 +2659,7 @@ func (x *FleetStatus) String() string {
 func (*FleetStatus) ProtoMessage() {}
 
 func (x *FleetStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[26]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2362,12 +2672,280 @@ func (x *FleetStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FleetStatus.ProtoReflect.Descriptor instead.
 func (*FleetStatus) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{26}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *FleetStatus) GetShips() []*FleetStatusShip {
 	if x != nil {
 		return x.Ships
+	}
+	return nil
+}
+
+// Client sets the pre-battle fleet formation (battle-line rank/column per ship).
+// The server reorders the fleet by (rank, col) so the front-left ship leads (flagship),
+// and spawns each ship at its rank/column offset when a combat instance unpacks the fleet.
+type FleetFormationSlot struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ShipId        uint32                 `protobuf:"varint,1,opt,name=ship_id,json=shipId,proto3" json:"ship_id,omitempty"`
+	Rank          int32                  `protobuf:"varint,2,opt,name=rank,proto3" json:"rank,omitempty"` // 0 = vanguard (front), higher = further back
+	Col           int32                  `protobuf:"varint,3,opt,name=col,proto3" json:"col,omitempty"`   // 0..5 lateral column
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FleetFormationSlot) Reset() {
+	*x = FleetFormationSlot{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FleetFormationSlot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FleetFormationSlot) ProtoMessage() {}
+
+func (x *FleetFormationSlot) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FleetFormationSlot.ProtoReflect.Descriptor instead.
+func (*FleetFormationSlot) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *FleetFormationSlot) GetShipId() uint32 {
+	if x != nil {
+		return x.ShipId
+	}
+	return 0
+}
+
+func (x *FleetFormationSlot) GetRank() int32 {
+	if x != nil {
+		return x.Rank
+	}
+	return 0
+}
+
+func (x *FleetFormationSlot) GetCol() int32 {
+	if x != nil {
+		return x.Col
+	}
+	return 0
+}
+
+type SetFleetFormation struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Slots         []*FleetFormationSlot  `protobuf:"bytes,1,rep,name=slots,proto3" json:"slots,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetFleetFormation) Reset() {
+	*x = SetFleetFormation{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetFleetFormation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetFleetFormation) ProtoMessage() {}
+
+func (x *SetFleetFormation) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetFleetFormation.ProtoReflect.Descriptor instead.
+func (*SetFleetFormation) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *SetFleetFormation) GetSlots() []*FleetFormationSlot {
+	if x != nil {
+		return x.Slots
+	}
+	return nil
+}
+
+// One player-owned colony (space base or developed planet) for the colony overview screen.
+type ColonyEntry struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EntityId      uint64                 `protobuf:"varint,1,opt,name=entity_id,json=entityId,proto3" json:"entity_id,omitempty"`
+	Kind          string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`    // "base" | "planet"
+	Level         int32                  `protobuf:"varint,3,opt,name=level,proto3" json:"level,omitempty"` // base level / planet development level
+	X             float32                `protobuf:"fixed32,4,opt,name=x,proto3" json:"x,omitempty"`
+	Y             float32                `protobuf:"fixed32,5,opt,name=y,proto3" json:"y,omitempty"`
+	Health        int32                  `protobuf:"varint,6,opt,name=health,proto3" json:"health,omitempty"` // bases only (0 for planets)
+	MaxHealth     int32                  `protobuf:"varint,7,opt,name=max_health,json=maxHealth,proto3" json:"max_health,omitempty"`
+	Income        int64                  `protobuf:"varint,8,opt,name=income,proto3" json:"income,omitempty"`                          // passive yield per production cycle
+	IncomeUnit    string                 `protobuf:"bytes,9,opt,name=income_unit,json=incomeUnit,proto3" json:"income_unit,omitempty"` // "IronPlates" | "cr"
+	SystemId      uint32                 `protobuf:"varint,10,opt,name=system_id,json=systemId,proto3" json:"system_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ColonyEntry) Reset() {
+	*x = ColonyEntry{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ColonyEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ColonyEntry) ProtoMessage() {}
+
+func (x *ColonyEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ColonyEntry.ProtoReflect.Descriptor instead.
+func (*ColonyEntry) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *ColonyEntry) GetEntityId() uint64 {
+	if x != nil {
+		return x.EntityId
+	}
+	return 0
+}
+
+func (x *ColonyEntry) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *ColonyEntry) GetLevel() int32 {
+	if x != nil {
+		return x.Level
+	}
+	return 0
+}
+
+func (x *ColonyEntry) GetX() float32 {
+	if x != nil {
+		return x.X
+	}
+	return 0
+}
+
+func (x *ColonyEntry) GetY() float32 {
+	if x != nil {
+		return x.Y
+	}
+	return 0
+}
+
+func (x *ColonyEntry) GetHealth() int32 {
+	if x != nil {
+		return x.Health
+	}
+	return 0
+}
+
+func (x *ColonyEntry) GetMaxHealth() int32 {
+	if x != nil {
+		return x.MaxHealth
+	}
+	return 0
+}
+
+func (x *ColonyEntry) GetIncome() int64 {
+	if x != nil {
+		return x.Income
+	}
+	return 0
+}
+
+func (x *ColonyEntry) GetIncomeUnit() string {
+	if x != nil {
+		return x.IncomeUnit
+	}
+	return ""
+}
+
+func (x *ColonyEntry) GetSystemId() uint32 {
+	if x != nil {
+		return x.SystemId
+	}
+	return 0
+}
+
+type ColoniesStatus struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Colonies      []*ColonyEntry         `protobuf:"bytes,1,rep,name=colonies,proto3" json:"colonies,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ColoniesStatus) Reset() {
+	*x = ColoniesStatus{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ColoniesStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ColoniesStatus) ProtoMessage() {}
+
+func (x *ColoniesStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ColoniesStatus.ProtoReflect.Descriptor instead.
+func (*ColoniesStatus) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *ColoniesStatus) GetColonies() []*ColonyEntry {
+	if x != nil {
+		return x.Colonies
 	}
 	return nil
 }
@@ -2385,7 +2963,7 @@ type WeaponSlotProto struct {
 
 func (x *WeaponSlotProto) Reset() {
 	*x = WeaponSlotProto{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[27]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2397,7 +2975,7 @@ func (x *WeaponSlotProto) String() string {
 func (*WeaponSlotProto) ProtoMessage() {}
 
 func (x *WeaponSlotProto) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[27]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2410,7 +2988,7 @@ func (x *WeaponSlotProto) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WeaponSlotProto.ProtoReflect.Descriptor instead.
 func (*WeaponSlotProto) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{27}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *WeaponSlotProto) GetSlotId() string {
@@ -2459,7 +3037,7 @@ type HullDefProto struct {
 
 func (x *HullDefProto) Reset() {
 	*x = HullDefProto{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[28]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2471,7 +3049,7 @@ func (x *HullDefProto) String() string {
 func (*HullDefProto) ProtoMessage() {}
 
 func (x *HullDefProto) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[28]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2484,7 +3062,7 @@ func (x *HullDefProto) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HullDefProto.ProtoReflect.Descriptor instead.
 func (*HullDefProto) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{28}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *HullDefProto) GetId() uint32 {
@@ -2576,7 +3154,7 @@ type WeaponDefProto struct {
 
 func (x *WeaponDefProto) Reset() {
 	*x = WeaponDefProto{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[29]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2588,7 +3166,7 @@ func (x *WeaponDefProto) String() string {
 func (*WeaponDefProto) ProtoMessage() {}
 
 func (x *WeaponDefProto) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[29]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2601,7 +3179,7 @@ func (x *WeaponDefProto) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WeaponDefProto.ProtoReflect.Descriptor instead.
 func (*WeaponDefProto) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{29}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *WeaponDefProto) GetWeaponId() string {
@@ -2692,7 +3270,7 @@ type HullmodDefProto struct {
 
 func (x *HullmodDefProto) Reset() {
 	*x = HullmodDefProto{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[30]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2704,7 +3282,7 @@ func (x *HullmodDefProto) String() string {
 func (*HullmodDefProto) ProtoMessage() {}
 
 func (x *HullmodDefProto) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[30]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2717,7 +3295,7 @@ func (x *HullmodDefProto) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HullmodDefProto.ProtoReflect.Descriptor instead.
 func (*HullmodDefProto) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{30}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *HullmodDefProto) GetModId() string {
@@ -2753,7 +3331,7 @@ type HangarData struct {
 
 func (x *HangarData) Reset() {
 	*x = HangarData{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[31]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2765,7 +3343,7 @@ func (x *HangarData) String() string {
 func (*HangarData) ProtoMessage() {}
 
 func (x *HangarData) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[31]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2778,7 +3356,7 @@ func (x *HangarData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HangarData.ProtoReflect.Descriptor instead.
 func (*HangarData) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{31}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *HangarData) GetHulls() []*HullDefProto {
@@ -2823,7 +3401,7 @@ type FitShipRequest struct {
 
 func (x *FitShipRequest) Reset() {
 	*x = FitShipRequest{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[32]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2835,7 +3413,7 @@ func (x *FitShipRequest) String() string {
 func (*FitShipRequest) ProtoMessage() {}
 
 func (x *FitShipRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[32]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2848,7 +3426,7 @@ func (x *FitShipRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FitShipRequest.ProtoReflect.Descriptor instead.
 func (*FitShipRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{32}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *FitShipRequest) GetShipId() uint32 {
@@ -2927,7 +3505,7 @@ type PlayerMigrationPayload struct {
 
 func (x *PlayerMigrationPayload) Reset() {
 	*x = PlayerMigrationPayload{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[33]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2939,7 +3517,7 @@ func (x *PlayerMigrationPayload) String() string {
 func (*PlayerMigrationPayload) ProtoMessage() {}
 
 func (x *PlayerMigrationPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[33]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2952,7 +3530,7 @@ func (x *PlayerMigrationPayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlayerMigrationPayload.ProtoReflect.Descriptor instead.
 func (*PlayerMigrationPayload) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{33}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *PlayerMigrationPayload) GetPlayerId() uint64 {
@@ -3199,7 +3777,7 @@ type SystemTransferRequest struct {
 
 func (x *SystemTransferRequest) Reset() {
 	*x = SystemTransferRequest{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[34]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3211,7 +3789,7 @@ func (x *SystemTransferRequest) String() string {
 func (*SystemTransferRequest) ProtoMessage() {}
 
 func (x *SystemTransferRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[34]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3224,7 +3802,7 @@ func (x *SystemTransferRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SystemTransferRequest.ProtoReflect.Descriptor instead.
 func (*SystemTransferRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{34}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *SystemTransferRequest) GetPlayerId() uint64 {
@@ -3273,7 +3851,7 @@ type SystemTransferResponse struct {
 
 func (x *SystemTransferResponse) Reset() {
 	*x = SystemTransferResponse{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[35]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3285,7 +3863,7 @@ func (x *SystemTransferResponse) String() string {
 func (*SystemTransferResponse) ProtoMessage() {}
 
 func (x *SystemTransferResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[35]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3298,7 +3876,7 @@ func (x *SystemTransferResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SystemTransferResponse.ProtoReflect.Descriptor instead.
 func (*SystemTransferResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{35}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *SystemTransferResponse) GetPlayerId() uint64 {
@@ -3331,7 +3909,7 @@ type CreateCorpRequest struct {
 
 func (x *CreateCorpRequest) Reset() {
 	*x = CreateCorpRequest{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[36]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3343,7 +3921,7 @@ func (x *CreateCorpRequest) String() string {
 func (*CreateCorpRequest) ProtoMessage() {}
 
 func (x *CreateCorpRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[36]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3356,7 +3934,7 @@ func (x *CreateCorpRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateCorpRequest.ProtoReflect.Descriptor instead.
 func (*CreateCorpRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{36}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *CreateCorpRequest) GetName() string {
@@ -3377,7 +3955,7 @@ type CreateCorpResponse struct {
 
 func (x *CreateCorpResponse) Reset() {
 	*x = CreateCorpResponse{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[37]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3389,7 +3967,7 @@ func (x *CreateCorpResponse) String() string {
 func (*CreateCorpResponse) ProtoMessage() {}
 
 func (x *CreateCorpResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[37]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3402,7 +3980,7 @@ func (x *CreateCorpResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateCorpResponse.ProtoReflect.Descriptor instead.
 func (*CreateCorpResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{37}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *CreateCorpResponse) GetSuccess() bool {
@@ -3435,7 +4013,7 @@ type InviteCorpRequest struct {
 
 func (x *InviteCorpRequest) Reset() {
 	*x = InviteCorpRequest{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[38]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3447,7 +4025,7 @@ func (x *InviteCorpRequest) String() string {
 func (*InviteCorpRequest) ProtoMessage() {}
 
 func (x *InviteCorpRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[38]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3460,7 +4038,7 @@ func (x *InviteCorpRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InviteCorpRequest.ProtoReflect.Descriptor instead.
 func (*InviteCorpRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{38}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *InviteCorpRequest) GetInviteeId() uint64 {
@@ -3479,7 +4057,7 @@ type JoinCorpRequest struct {
 
 func (x *JoinCorpRequest) Reset() {
 	*x = JoinCorpRequest{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[39]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3491,7 +4069,7 @@ func (x *JoinCorpRequest) String() string {
 func (*JoinCorpRequest) ProtoMessage() {}
 
 func (x *JoinCorpRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[39]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3504,7 +4082,7 @@ func (x *JoinCorpRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JoinCorpRequest.ProtoReflect.Descriptor instead.
 func (*JoinCorpRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{39}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *JoinCorpRequest) GetCorpId() uint32 {
@@ -3525,7 +4103,7 @@ type StartRefineRequest struct {
 
 func (x *StartRefineRequest) Reset() {
 	*x = StartRefineRequest{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[40]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3537,7 +4115,7 @@ func (x *StartRefineRequest) String() string {
 func (*StartRefineRequest) ProtoMessage() {}
 
 func (x *StartRefineRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[40]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3550,7 +4128,7 @@ func (x *StartRefineRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartRefineRequest.ProtoReflect.Descriptor instead.
 func (*StartRefineRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{40}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *StartRefineRequest) GetStationId() uint64 {
@@ -3584,7 +4162,7 @@ type BuildShipRequest struct {
 
 func (x *BuildShipRequest) Reset() {
 	*x = BuildShipRequest{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[41]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3596,7 +4174,7 @@ func (x *BuildShipRequest) String() string {
 func (*BuildShipRequest) ProtoMessage() {}
 
 func (x *BuildShipRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[41]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3609,7 +4187,7 @@ func (x *BuildShipRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BuildShipRequest.ProtoReflect.Descriptor instead.
 func (*BuildShipRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{41}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *BuildShipRequest) GetStationId() uint64 {
@@ -3639,7 +4217,7 @@ type VaultAction struct {
 
 func (x *VaultAction) Reset() {
 	*x = VaultAction{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[42]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3651,7 +4229,7 @@ func (x *VaultAction) String() string {
 func (*VaultAction) ProtoMessage() {}
 
 func (x *VaultAction) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[42]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3664,7 +4242,7 @@ func (x *VaultAction) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VaultAction.ProtoReflect.Descriptor instead.
 func (*VaultAction) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{42}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *VaultAction) GetStationId() uint64 {
@@ -3713,7 +4291,7 @@ type VaultStatus struct {
 
 func (x *VaultStatus) Reset() {
 	*x = VaultStatus{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[43]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3725,7 +4303,7 @@ func (x *VaultStatus) String() string {
 func (*VaultStatus) ProtoMessage() {}
 
 func (x *VaultStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[43]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3738,7 +4316,7 @@ func (x *VaultStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VaultStatus.ProtoReflect.Descriptor instead.
 func (*VaultStatus) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{43}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *VaultStatus) GetStationId() uint64 {
@@ -3766,13 +4344,14 @@ type JoinCombatRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	CombatInstanceId uint32                 `protobuf:"varint,1,opt,name=combat_instance_id,json=combatInstanceId,proto3" json:"combat_instance_id,omitempty"`
 	AlignWithFleetId uint64                 `protobuf:"varint,2,opt,name=align_with_fleet_id,json=alignWithFleetId,proto3" json:"align_with_fleet_id,omitempty"` // 0 for FFA (free for all)
+	Side             string                 `protobuf:"bytes,3,opt,name=side,proto3" json:"side,omitempty"`                                                      // "attacker" | "defender" | "" — server resolves the fleet id from the marker
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
 
 func (x *JoinCombatRequest) Reset() {
 	*x = JoinCombatRequest{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[44]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3784,7 +4363,7 @@ func (x *JoinCombatRequest) String() string {
 func (*JoinCombatRequest) ProtoMessage() {}
 
 func (x *JoinCombatRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[44]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3797,7 +4376,7 @@ func (x *JoinCombatRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JoinCombatRequest.ProtoReflect.Descriptor instead.
 func (*JoinCombatRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{44}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *JoinCombatRequest) GetCombatInstanceId() uint32 {
@@ -3814,6 +4393,13 @@ func (x *JoinCombatRequest) GetAlignWithFleetId() uint64 {
 	return 0
 }
 
+func (x *JoinCombatRequest) GetSide() string {
+	if x != nil {
+		return x.Side
+	}
+	return ""
+}
+
 // Phase 3: data-driven crafting.
 type CraftRecipeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -3824,7 +4410,7 @@ type CraftRecipeRequest struct {
 
 func (x *CraftRecipeRequest) Reset() {
 	*x = CraftRecipeRequest{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[45]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3836,7 +4422,7 @@ func (x *CraftRecipeRequest) String() string {
 func (*CraftRecipeRequest) ProtoMessage() {}
 
 func (x *CraftRecipeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[45]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3849,7 +4435,7 @@ func (x *CraftRecipeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CraftRecipeRequest.ProtoReflect.Descriptor instead.
 func (*CraftRecipeRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{45}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *CraftRecipeRequest) GetRecipeId() string {
@@ -3875,7 +4461,7 @@ type RecipeProto struct {
 
 func (x *RecipeProto) Reset() {
 	*x = RecipeProto{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[46]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3887,7 +4473,7 @@ func (x *RecipeProto) String() string {
 func (*RecipeProto) ProtoMessage() {}
 
 func (x *RecipeProto) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[46]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3900,7 +4486,7 @@ func (x *RecipeProto) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RecipeProto.ProtoReflect.Descriptor instead.
 func (*RecipeProto) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{46}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *RecipeProto) GetId() string {
@@ -3971,7 +4557,7 @@ type CraftJobProto struct {
 
 func (x *CraftJobProto) Reset() {
 	*x = CraftJobProto{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[47]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3983,7 +4569,7 @@ func (x *CraftJobProto) String() string {
 func (*CraftJobProto) ProtoMessage() {}
 
 func (x *CraftJobProto) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[47]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3996,7 +4582,7 @@ func (x *CraftJobProto) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CraftJobProto.ProtoReflect.Descriptor instead.
 func (*CraftJobProto) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{47}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *CraftJobProto) GetRecipeId() string {
@@ -4037,7 +4623,7 @@ type ProductionStatus struct {
 
 func (x *ProductionStatus) Reset() {
 	*x = ProductionStatus{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[48]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4049,7 +4635,7 @@ func (x *ProductionStatus) String() string {
 func (*ProductionStatus) ProtoMessage() {}
 
 func (x *ProductionStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[48]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4062,7 +4648,7 @@ func (x *ProductionStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProductionStatus.ProtoReflect.Descriptor instead.
 func (*ProductionStatus) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{48}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *ProductionStatus) GetQueue() []*CraftJobProto {
@@ -4092,7 +4678,7 @@ type SkillProto struct {
 
 func (x *SkillProto) Reset() {
 	*x = SkillProto{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[49]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4104,7 +4690,7 @@ func (x *SkillProto) String() string {
 func (*SkillProto) ProtoMessage() {}
 
 func (x *SkillProto) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[49]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4117,7 +4703,7 @@ func (x *SkillProto) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SkillProto.ProtoReflect.Descriptor instead.
 func (*SkillProto) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{49}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *SkillProto) GetKey() string {
@@ -4157,7 +4743,7 @@ type PlayerProgressMsg struct {
 
 func (x *PlayerProgressMsg) Reset() {
 	*x = PlayerProgressMsg{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[50]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4169,7 +4755,7 @@ func (x *PlayerProgressMsg) String() string {
 func (*PlayerProgressMsg) ProtoMessage() {}
 
 func (x *PlayerProgressMsg) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[50]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4182,7 +4768,7 @@ func (x *PlayerProgressMsg) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlayerProgressMsg.ProtoReflect.Descriptor instead.
 func (*PlayerProgressMsg) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{50}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *PlayerProgressMsg) GetSkills() []*SkillProto {
@@ -4202,7 +4788,7 @@ type StartResearchRequest struct {
 
 func (x *StartResearchRequest) Reset() {
 	*x = StartResearchRequest{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[51]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4214,7 +4800,7 @@ func (x *StartResearchRequest) String() string {
 func (*StartResearchRequest) ProtoMessage() {}
 
 func (x *StartResearchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[51]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4227,7 +4813,7 @@ func (x *StartResearchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartResearchRequest.ProtoReflect.Descriptor instead.
 func (*StartResearchRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{51}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *StartResearchRequest) GetProjectId() string {
@@ -4254,7 +4840,7 @@ type ResearchProjectProto struct {
 
 func (x *ResearchProjectProto) Reset() {
 	*x = ResearchProjectProto{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[52]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4266,7 +4852,7 @@ func (x *ResearchProjectProto) String() string {
 func (*ResearchProjectProto) ProtoMessage() {}
 
 func (x *ResearchProjectProto) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[52]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4279,7 +4865,7 @@ func (x *ResearchProjectProto) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResearchProjectProto.ProtoReflect.Descriptor instead.
 func (*ResearchProjectProto) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{52}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *ResearchProjectProto) GetId() string {
@@ -4354,7 +4940,7 @@ type ResearchStatus struct {
 
 func (x *ResearchStatus) Reset() {
 	*x = ResearchStatus{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[53]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4366,7 +4952,7 @@ func (x *ResearchStatus) String() string {
 func (*ResearchStatus) ProtoMessage() {}
 
 func (x *ResearchStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[53]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4379,7 +4965,7 @@ func (x *ResearchStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResearchStatus.ProtoReflect.Descriptor instead.
 func (*ResearchStatus) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{53}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *ResearchStatus) GetProjects() []*ResearchProjectProto {
@@ -4398,7 +4984,7 @@ type BuildBaseRequest struct {
 
 func (x *BuildBaseRequest) Reset() {
 	*x = BuildBaseRequest{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[54]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4410,7 +4996,7 @@ func (x *BuildBaseRequest) String() string {
 func (*BuildBaseRequest) ProtoMessage() {}
 
 func (x *BuildBaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[54]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4423,7 +5009,7 @@ func (x *BuildBaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BuildBaseRequest.ProtoReflect.Descriptor instead.
 func (*BuildBaseRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{54}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{60}
 }
 
 type UpgradeBaseRequest struct {
@@ -4435,7 +5021,7 @@ type UpgradeBaseRequest struct {
 
 func (x *UpgradeBaseRequest) Reset() {
 	*x = UpgradeBaseRequest{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[55]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4447,7 +5033,7 @@ func (x *UpgradeBaseRequest) String() string {
 func (*UpgradeBaseRequest) ProtoMessage() {}
 
 func (x *UpgradeBaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[55]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4460,7 +5046,7 @@ func (x *UpgradeBaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpgradeBaseRequest.ProtoReflect.Descriptor instead.
 func (*UpgradeBaseRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{55}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *UpgradeBaseRequest) GetBaseId() uint64 {
@@ -4479,7 +5065,7 @@ type DevelopPlanetRequest struct {
 
 func (x *DevelopPlanetRequest) Reset() {
 	*x = DevelopPlanetRequest{}
-	mi := &file_pkg_protocol_messages_proto_msgTypes[56]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4491,7 +5077,7 @@ func (x *DevelopPlanetRequest) String() string {
 func (*DevelopPlanetRequest) ProtoMessage() {}
 
 func (x *DevelopPlanetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_protocol_messages_proto_msgTypes[56]
+	mi := &file_pkg_protocol_messages_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4504,7 +5090,7 @@ func (x *DevelopPlanetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DevelopPlanetRequest.ProtoReflect.Descriptor instead.
 func (*DevelopPlanetRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{56}
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *DevelopPlanetRequest) GetPlanetId() uint64 {
@@ -4512,6 +5098,550 @@ func (x *DevelopPlanetRequest) GetPlanetId() uint64 {
 		return x.PlanetId
 	}
 	return 0
+}
+
+// Eject a quantity of a cargo resource into space as a loot container.
+type JettisonInput struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Resource      string                 `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
+	Amount        int32                  `protobuf:"varint,2,opt,name=amount,proto3" json:"amount,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *JettisonInput) Reset() {
+	*x = JettisonInput{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[63]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *JettisonInput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*JettisonInput) ProtoMessage() {}
+
+func (x *JettisonInput) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[63]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use JettisonInput.ProtoReflect.Descriptor instead.
+func (*JettisonInput) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{63}
+}
+
+func (x *JettisonInput) GetResource() string {
+	if x != nil {
+		return x.Resource
+	}
+	return ""
+}
+
+func (x *JettisonInput) GetAmount() int32 {
+	if x != nil {
+		return x.Amount
+	}
+	return 0
+}
+
+// Context actions: client asks "what can I do with this object", server replies
+// with a data-driven list (single source of truth for action availability).
+type QueryActionsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TargetId      uint64                 `protobuf:"varint,1,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *QueryActionsRequest) Reset() {
+	*x = QueryActionsRequest{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[64]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *QueryActionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QueryActionsRequest) ProtoMessage() {}
+
+func (x *QueryActionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[64]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use QueryActionsRequest.ProtoReflect.Descriptor instead.
+func (*QueryActionsRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{64}
+}
+
+func (x *QueryActionsRequest) GetTargetId() uint64 {
+	if x != nil {
+		return x.TargetId
+	}
+	return 0
+}
+
+type ActionDef struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`            // verb: mine | attack | escort | talk | upgrade_base | develop_planet | join_combat | buy | sell | refine | build_ship | dock
+	Label         string                 `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`      // display label
+	Enabled       bool                   `protobuf:"varint,3,opt,name=enabled,proto3" json:"enabled,omitempty"` // greyed out when false
+	Hint          string                 `protobuf:"bytes,4,opt,name=hint,proto3" json:"hint,omitempty"`        // tooltip / reason it is disabled
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ActionDef) Reset() {
+	*x = ActionDef{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[65]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ActionDef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ActionDef) ProtoMessage() {}
+
+func (x *ActionDef) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[65]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ActionDef.ProtoReflect.Descriptor instead.
+func (*ActionDef) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{65}
+}
+
+func (x *ActionDef) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ActionDef) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *ActionDef) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+func (x *ActionDef) GetHint() string {
+	if x != nil {
+		return x.Hint
+	}
+	return ""
+}
+
+type TargetActions struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TargetId      uint64                 `protobuf:"varint,1,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	Actions       []*ActionDef           `protobuf:"bytes,2,rep,name=actions,proto3" json:"actions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TargetActions) Reset() {
+	*x = TargetActions{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[66]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TargetActions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TargetActions) ProtoMessage() {}
+
+func (x *TargetActions) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[66]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TargetActions.ProtoReflect.Descriptor instead.
+func (*TargetActions) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{66}
+}
+
+func (x *TargetActions) GetTargetId() uint64 {
+	if x != nil {
+		return x.TargetId
+	}
+	return 0
+}
+
+func (x *TargetActions) GetActions() []*ActionDef {
+	if x != nil {
+		return x.Actions
+	}
+	return nil
+}
+
+// Player-initiated combat: spin up an instance against this NPC.
+type AttackNpcRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TargetId      uint64                 `protobuf:"varint,1,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AttackNpcRequest) Reset() {
+	*x = AttackNpcRequest{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[67]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AttackNpcRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AttackNpcRequest) ProtoMessage() {}
+
+func (x *AttackNpcRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[67]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AttackNpcRequest.ProtoReflect.Descriptor instead.
+func (*AttackNpcRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{67}
+}
+
+func (x *AttackNpcRequest) GetTargetId() uint64 {
+	if x != nil {
+		return x.TargetId
+	}
+	return 0
+}
+
+// Follow/escort order: the player's ship follows the target at a standoff.
+// target_id = 0 cancels the current follow order.
+type SetFollowRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TargetId      uint64                 `protobuf:"varint,1,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetFollowRequest) Reset() {
+	*x = SetFollowRequest{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[68]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetFollowRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetFollowRequest) ProtoMessage() {}
+
+func (x *SetFollowRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[68]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetFollowRequest.ProtoReflect.Descriptor instead.
+func (*SetFollowRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{68}
+}
+
+func (x *SetFollowRequest) GetTargetId() uint64 {
+	if x != nil {
+		return x.TargetId
+	}
+	return 0
+}
+
+// Minimal hail/talk stub.
+type HailRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TargetId      uint64                 `protobuf:"varint,1,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HailRequest) Reset() {
+	*x = HailRequest{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[69]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HailRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HailRequest) ProtoMessage() {}
+
+func (x *HailRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[69]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HailRequest.ProtoReflect.Descriptor instead.
+func (*HailRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{69}
+}
+
+func (x *HailRequest) GetTargetId() uint64 {
+	if x != nil {
+		return x.TargetId
+	}
+	return 0
+}
+
+type HailResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TargetId      uint64                 `protobuf:"varint,1,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Faction       string                 `protobuf:"bytes,3,opt,name=faction,proto3" json:"faction,omitempty"`
+	Disposition   string                 `protobuf:"bytes,4,opt,name=disposition,proto3" json:"disposition,omitempty"` // friendly | neutral | hostile
+	Lines         []string               `protobuf:"bytes,5,rep,name=lines,proto3" json:"lines,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HailResponse) Reset() {
+	*x = HailResponse{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[70]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HailResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HailResponse) ProtoMessage() {}
+
+func (x *HailResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[70]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HailResponse.ProtoReflect.Descriptor instead.
+func (*HailResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{70}
+}
+
+func (x *HailResponse) GetTargetId() uint64 {
+	if x != nil {
+		return x.TargetId
+	}
+	return 0
+}
+
+func (x *HailResponse) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *HailResponse) GetFaction() string {
+	if x != nil {
+		return x.Faction
+	}
+	return ""
+}
+
+func (x *HailResponse) GetDisposition() string {
+	if x != nil {
+		return x.Disposition
+	}
+	return ""
+}
+
+func (x *HailResponse) GetLines() []string {
+	if x != nil {
+		return x.Lines
+	}
+	return nil
+}
+
+// Scan a loot container to reveal its contents before collecting.
+type ScanContainerRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TargetId      uint64                 `protobuf:"varint,1,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScanContainerRequest) Reset() {
+	*x = ScanContainerRequest{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[71]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScanContainerRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScanContainerRequest) ProtoMessage() {}
+
+func (x *ScanContainerRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[71]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScanContainerRequest.ProtoReflect.Descriptor instead.
+func (*ScanContainerRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{71}
+}
+
+func (x *ScanContainerRequest) GetTargetId() uint64 {
+	if x != nil {
+		return x.TargetId
+	}
+	return 0
+}
+
+type ContainerContents struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TargetId      uint64                 `protobuf:"varint,1,opt,name=target_id,json=targetId,proto3" json:"target_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Credits       int64                  `protobuf:"varint,3,opt,name=credits,proto3" json:"credits,omitempty"`
+	Items         []*ItemInstanceProto   `protobuf:"bytes,4,rep,name=items,proto3" json:"items,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ContainerContents) Reset() {
+	*x = ContainerContents{}
+	mi := &file_pkg_protocol_messages_proto_msgTypes[72]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ContainerContents) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ContainerContents) ProtoMessage() {}
+
+func (x *ContainerContents) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_protocol_messages_proto_msgTypes[72]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ContainerContents.ProtoReflect.Descriptor instead.
+func (*ContainerContents) Descriptor() ([]byte, []int) {
+	return file_pkg_protocol_messages_proto_rawDescGZIP(), []int{72}
+}
+
+func (x *ContainerContents) GetTargetId() uint64 {
+	if x != nil {
+		return x.TargetId
+	}
+	return 0
+}
+
+func (x *ContainerContents) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ContainerContents) GetCredits() int64 {
+	if x != nil {
+		return x.Credits
+	}
+	return 0
+}
+
+func (x *ContainerContents) GetItems() []*ItemInstanceProto {
+	if x != nil {
+		return x.Items
+	}
+	return nil
 }
 
 var File_pkg_protocol_messages_proto protoreflect.FileDescriptor
@@ -4557,7 +5687,7 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
 	"\rsession_token\x18\x02 \x01(\tR\fsessionToken\x12\x1b\n" +
 	"\tentity_id\x18\x03 \x01(\x04R\bentityId\x12#\n" +
-	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\"\x9b\f\n" +
+	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\"\xc4\r\n" +
 	"\x0eEntitySnapshot\x12\x1b\n" +
 	"\tentity_id\x18\x01 \x01(\x04R\bentityId\x12\x1f\n" +
 	"\ventity_type\x18\x02 \x01(\rR\n" +
@@ -4621,10 +5751,40 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"\vassist_type\x181 \x01(\tR\n" +
 	"assistType\x12\x1d\n" +
 	"\n" +
-	"base_level\x182 \x01(\x05R\tbaseLevel\"Y\n" +
+	"base_level\x182 \x01(\x05R\tbaseLevel\x12\x1d\n" +
+	"\n" +
+	"shield_arc\x183 \x01(\x02R\tshieldArc\x12#\n" +
+	"\rshield_facing\x184 \x01(\x02R\fshieldFacing\x12\x1d\n" +
+	"\n" +
+	"engine_hit\x185 \x01(\bR\tengineHit\x12\x1d\n" +
+	"\n" +
+	"weapon_hit\x186 \x01(\bR\tweaponHit\x12%\n" +
+	"\x0eoverload_timer\x187 \x01(\x02R\roverloadTimer\"\x8f\x02\n" +
+	"\tFireEvent\x12\x1f\n" +
+	"\vattacker_id\x18\x01 \x01(\x04R\n" +
+	"attackerId\x12\x1b\n" +
+	"\ttarget_id\x18\x02 \x01(\x04R\btargetId\x12\x19\n" +
+	"\borigin_x\x18\x03 \x01(\x02R\aoriginX\x12\x19\n" +
+	"\borigin_y\x18\x04 \x01(\x02R\aoriginY\x12\x19\n" +
+	"\btarget_x\x18\x05 \x01(\x02R\atargetX\x12\x19\n" +
+	"\btarget_y\x18\x06 \x01(\x02R\atargetY\x12\x14\n" +
+	"\x05speed\x18\a \x01(\x02R\x05speed\x12\x1f\n" +
+	"\vdamage_type\x18\b \x01(\tR\n" +
+	"damageType\x12!\n" +
+	"\fweapon_class\x18\t \x01(\tR\vweaponClass\"w\n" +
+	"\fMissileState\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x04R\x02id\x12\f\n" +
+	"\x01x\x18\x02 \x01(\x02R\x01x\x12\f\n" +
+	"\x01y\x18\x03 \x01(\x02R\x01y\x12\x1a\n" +
+	"\brotation\x18\x04 \x01(\x02R\brotation\x12\x1f\n" +
+	"\vdamage_type\x18\x05 \x01(\tR\n" +
+	"damageType\"\xc3\x01\n" +
 	"\rWorldSnapshot\x12\x12\n" +
 	"\x04tick\x18\x01 \x01(\x04R\x04tick\x124\n" +
-	"\bentities\x18\x02 \x03(\v2\x18.protocol.EntitySnapshotR\bentities\"\x97\x01\n" +
+	"\bentities\x18\x02 \x03(\v2\x18.protocol.EntitySnapshotR\bentities\x124\n" +
+	"\vfire_events\x18\x03 \x03(\v2\x13.protocol.FireEventR\n" +
+	"fireEvents\x122\n" +
+	"\bmissiles\x18\x04 \x03(\v2\x16.protocol.MissileStateR\bmissiles\"\x97\x01\n" +
 	"\rDeltaSnapshot\x12\x12\n" +
 	"\x04tick\x18\x01 \x01(\x04R\x04tick\x12C\n" +
 	"\x10updated_entities\x18\x02 \x03(\v2\x18.protocol.EntitySnapshotR\x0fupdatedEntities\x12-\n" +
@@ -4704,7 +5864,7 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"\x04role\x18\x02 \x01(\tR\x04role\x12\x1a\n" +
 	"\bstrategy\x18\x03 \x01(\tR\bstrategy\"C\n" +
 	"\x0fSetFleetTactics\x120\n" +
-	"\x05ships\x18\x01 \x03(\v2\x1a.protocol.FleetShipTacticsR\x05ships\"\xa3\x06\n" +
+	"\x05ships\x18\x01 \x03(\v2\x1a.protocol.FleetShipTacticsR\x05ships\"\xef\x06\n" +
 	"\x0fFleetStatusShip\x12\x17\n" +
 	"\aship_id\x18\x01 \x01(\rR\x06shipId\x12\x1b\n" +
 	"\tship_type\x18\x02 \x01(\tR\bshipType\x12\x16\n" +
@@ -4732,12 +5892,36 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"\x0epreview_shield\x18\x12 \x01(\x02R\rpreviewShield\x12*\n" +
 	"\x11preview_max_speed\x18\x13 \x01(\x02R\x0fpreviewMaxSpeed\x12(\n" +
 	"\x10preview_max_flux\x18\x14 \x01(\x02R\x0epreviewMaxFlux\x128\n" +
-	"\x18preview_flux_dissipation\x18\x15 \x01(\x02R\x16previewFluxDissipation\x1a@\n" +
+	"\x18preview_flux_dissipation\x18\x15 \x01(\x02R\x16previewFluxDissipation\x12%\n" +
+	"\x0eformation_rank\x18\x16 \x01(\x05R\rformationRank\x12#\n" +
+	"\rformation_col\x18\x17 \x01(\x05R\fformationCol\x1a@\n" +
 	"\x12FittedWeaponsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\">\n" +
 	"\vFleetStatus\x12/\n" +
-	"\x05ships\x18\x01 \x03(\v2\x19.protocol.FleetStatusShipR\x05ships\"h\n" +
+	"\x05ships\x18\x01 \x03(\v2\x19.protocol.FleetStatusShipR\x05ships\"S\n" +
+	"\x12FleetFormationSlot\x12\x17\n" +
+	"\aship_id\x18\x01 \x01(\rR\x06shipId\x12\x12\n" +
+	"\x04rank\x18\x02 \x01(\x05R\x04rank\x12\x10\n" +
+	"\x03col\x18\x03 \x01(\x05R\x03col\"G\n" +
+	"\x11SetFleetFormation\x122\n" +
+	"\x05slots\x18\x01 \x03(\v2\x1c.protocol.FleetFormationSlotR\x05slots\"\xfd\x01\n" +
+	"\vColonyEntry\x12\x1b\n" +
+	"\tentity_id\x18\x01 \x01(\x04R\bentityId\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x14\n" +
+	"\x05level\x18\x03 \x01(\x05R\x05level\x12\f\n" +
+	"\x01x\x18\x04 \x01(\x02R\x01x\x12\f\n" +
+	"\x01y\x18\x05 \x01(\x02R\x01y\x12\x16\n" +
+	"\x06health\x18\x06 \x01(\x05R\x06health\x12\x1d\n" +
+	"\n" +
+	"max_health\x18\a \x01(\x05R\tmaxHealth\x12\x16\n" +
+	"\x06income\x18\b \x01(\x03R\x06income\x12\x1f\n" +
+	"\vincome_unit\x18\t \x01(\tR\n" +
+	"incomeUnit\x12\x1b\n" +
+	"\tsystem_id\x18\n" +
+	" \x01(\rR\bsystemId\"C\n" +
+	"\x0eColoniesStatus\x121\n" +
+	"\bcolonies\x18\x01 \x03(\v2\x15.protocol.ColonyEntryR\bcolonies\"h\n" +
 	"\x0fWeaponSlotProto\x12\x17\n" +
 	"\aslot_id\x18\x01 \x01(\tR\x06slotId\x12\x12\n" +
 	"\x04size\x18\x02 \x01(\tR\x04size\x12\x12\n" +
@@ -4889,10 +6073,11 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"\n" +
 	"station_id\x18\x01 \x01(\x04R\tstationId\x12B\n" +
 	"\x0epersonal_items\x18\x02 \x03(\v2\x1b.protocol.ItemInstanceProtoR\rpersonalItems\x12D\n" +
-	"\x0fcorporate_items\x18\x03 \x03(\v2\x1b.protocol.ItemInstanceProtoR\x0ecorporateItems\"p\n" +
+	"\x0fcorporate_items\x18\x03 \x03(\v2\x1b.protocol.ItemInstanceProtoR\x0ecorporateItems\"\x84\x01\n" +
 	"\x11JoinCombatRequest\x12,\n" +
 	"\x12combat_instance_id\x18\x01 \x01(\rR\x10combatInstanceId\x12-\n" +
-	"\x13align_with_fleet_id\x18\x02 \x01(\x04R\x10alignWithFleetId\"1\n" +
+	"\x13align_with_fleet_id\x18\x02 \x01(\x04R\x10alignWithFleetId\x12\x12\n" +
+	"\x04side\x18\x03 \x01(\tR\x04side\"1\n" +
 	"\x12CraftRecipeRequest\x12\x1b\n" +
 	"\trecipe_id\x18\x01 \x01(\tR\brecipeId\"\x9d\x03\n" +
 	"\vRecipeProto\x12\x0e\n" +
@@ -4947,7 +6132,39 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"\x12UpgradeBaseRequest\x12\x17\n" +
 	"\abase_id\x18\x01 \x01(\x04R\x06baseId\"3\n" +
 	"\x14DevelopPlanetRequest\x12\x1b\n" +
-	"\tplanet_id\x18\x01 \x01(\x04R\bplanetId*\xd2\x06\n" +
+	"\tplanet_id\x18\x01 \x01(\x04R\bplanetId\"C\n" +
+	"\rJettisonInput\x12\x1a\n" +
+	"\bresource\x18\x01 \x01(\tR\bresource\x12\x16\n" +
+	"\x06amount\x18\x02 \x01(\x05R\x06amount\"2\n" +
+	"\x13QueryActionsRequest\x12\x1b\n" +
+	"\ttarget_id\x18\x01 \x01(\x04R\btargetId\"_\n" +
+	"\tActionDef\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
+	"\x05label\x18\x02 \x01(\tR\x05label\x12\x18\n" +
+	"\aenabled\x18\x03 \x01(\bR\aenabled\x12\x12\n" +
+	"\x04hint\x18\x04 \x01(\tR\x04hint\"[\n" +
+	"\rTargetActions\x12\x1b\n" +
+	"\ttarget_id\x18\x01 \x01(\x04R\btargetId\x12-\n" +
+	"\aactions\x18\x02 \x03(\v2\x13.protocol.ActionDefR\aactions\"/\n" +
+	"\x10AttackNpcRequest\x12\x1b\n" +
+	"\ttarget_id\x18\x01 \x01(\x04R\btargetId\"/\n" +
+	"\x10SetFollowRequest\x12\x1b\n" +
+	"\ttarget_id\x18\x01 \x01(\x04R\btargetId\"*\n" +
+	"\vHailRequest\x12\x1b\n" +
+	"\ttarget_id\x18\x01 \x01(\x04R\btargetId\"\x91\x01\n" +
+	"\fHailResponse\x12\x1b\n" +
+	"\ttarget_id\x18\x01 \x01(\x04R\btargetId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
+	"\afaction\x18\x03 \x01(\tR\afaction\x12 \n" +
+	"\vdisposition\x18\x04 \x01(\tR\vdisposition\x12\x14\n" +
+	"\x05lines\x18\x05 \x03(\tR\x05lines\"3\n" +
+	"\x14ScanContainerRequest\x12\x1b\n" +
+	"\ttarget_id\x18\x01 \x01(\x04R\btargetId\"\x91\x01\n" +
+	"\x11ContainerContents\x12\x1b\n" +
+	"\ttarget_id\x18\x01 \x01(\x04R\btargetId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
+	"\acredits\x18\x03 \x01(\x03R\acredits\x121\n" +
+	"\x05items\x18\x04 \x03(\v2\x1b.protocol.ItemInstanceProtoR\x05items*\xd6\b\n" +
 	"\n" +
 	"PacketType\x12\x12\n" +
 	"\x0ePACKET_UNKNOWN\x10\x00\x12\x12\n" +
@@ -4993,7 +6210,20 @@ const file_pkg_protocol_messages_proto_rawDesc = "" +
 	"\x11S_RESEARCH_STATUS\x10$\x12\x10\n" +
 	"\fC_BUILD_BASE\x10%\x12\x12\n" +
 	"\x0eC_UPGRADE_BASE\x10&\x12\x14\n" +
-	"\x10C_DEVELOP_PLANET\x10'B2Z0github.com/Home/galaxy-mmo/pkg/protocol;protocolb\x06proto3"
+	"\x10C_DEVELOP_PLANET\x10'\x12\x14\n" +
+	"\x10C_JETTISON_INPUT\x10(\x12\x13\n" +
+	"\x0fC_QUERY_ACTIONS\x10)\x12\x14\n" +
+	"\x10S_TARGET_ACTIONS\x10*\x12\x18\n" +
+	"\x14C_ATTACK_NPC_REQUEST\x10+\x12\x10\n" +
+	"\fC_SET_FOLLOW\x10,\x12\n" +
+	"\n" +
+	"\x06C_HAIL\x10-\x12\x13\n" +
+	"\x0fS_HAIL_RESPONSE\x10.\x12\x14\n" +
+	"\x10C_SCAN_CONTAINER\x10/\x12\x18\n" +
+	"\x14S_CONTAINER_CONTENTS\x100\x12\x19\n" +
+	"\x15C_SET_FLEET_FORMATION\x101\x12\x12\n" +
+	"\x0eC_GET_COLONIES\x102\x12\x15\n" +
+	"\x11S_COLONIES_STATUS\x103B2Z0github.com/Home/galaxy-mmo/pkg/protocol;protocolb\x06proto3"
 
 var (
 	file_pkg_protocol_messages_proto_rawDescOnce sync.Once
@@ -5008,7 +6238,7 @@ func file_pkg_protocol_messages_proto_rawDescGZIP() []byte {
 }
 
 var file_pkg_protocol_messages_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_pkg_protocol_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 64)
+var file_pkg_protocol_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 80)
 var file_pkg_protocol_messages_proto_goTypes = []any{
 	(PacketType)(0),                // 0: protocol.PacketType
 	(*Packet)(nil),                 // 1: protocol.Packet
@@ -5022,95 +6252,117 @@ var file_pkg_protocol_messages_proto_goTypes = []any{
 	(*Ping)(nil),                   // 9: protocol.Ping
 	(*AuthResponse)(nil),           // 10: protocol.AuthResponse
 	(*EntitySnapshot)(nil),         // 11: protocol.EntitySnapshot
-	(*WorldSnapshot)(nil),          // 12: protocol.WorldSnapshot
-	(*DeltaSnapshot)(nil),          // 13: protocol.DeltaSnapshot
-	(*DamageEvent)(nil),            // 14: protocol.DamageEvent
-	(*DeathEvent)(nil),             // 15: protocol.DeathEvent
-	(*ChatMessage)(nil),            // 16: protocol.ChatMessage
-	(*MarketItem)(nil),             // 17: protocol.MarketItem
-	(*MarketData)(nil),             // 18: protocol.MarketData
-	(*ItemInstanceProto)(nil),      // 19: protocol.ItemInstanceProto
-	(*InventoryUpdate)(nil),        // 20: protocol.InventoryUpdate
-	(*Pong)(nil),                   // 21: protocol.Pong
-	(*ServerCommand)(nil),          // 22: protocol.ServerCommand
-	(*FleetShipProto)(nil),         // 23: protocol.FleetShipProto
-	(*FleetShipTactics)(nil),       // 24: protocol.FleetShipTactics
-	(*SetFleetTactics)(nil),        // 25: protocol.SetFleetTactics
-	(*FleetStatusShip)(nil),        // 26: protocol.FleetStatusShip
-	(*FleetStatus)(nil),            // 27: protocol.FleetStatus
-	(*WeaponSlotProto)(nil),        // 28: protocol.WeaponSlotProto
-	(*HullDefProto)(nil),           // 29: protocol.HullDefProto
-	(*WeaponDefProto)(nil),         // 30: protocol.WeaponDefProto
-	(*HullmodDefProto)(nil),        // 31: protocol.HullmodDefProto
-	(*HangarData)(nil),             // 32: protocol.HangarData
-	(*FitShipRequest)(nil),         // 33: protocol.FitShipRequest
-	(*PlayerMigrationPayload)(nil), // 34: protocol.PlayerMigrationPayload
-	(*SystemTransferRequest)(nil),  // 35: protocol.SystemTransferRequest
-	(*SystemTransferResponse)(nil), // 36: protocol.SystemTransferResponse
-	(*CreateCorpRequest)(nil),      // 37: protocol.CreateCorpRequest
-	(*CreateCorpResponse)(nil),     // 38: protocol.CreateCorpResponse
-	(*InviteCorpRequest)(nil),      // 39: protocol.InviteCorpRequest
-	(*JoinCorpRequest)(nil),        // 40: protocol.JoinCorpRequest
-	(*StartRefineRequest)(nil),     // 41: protocol.StartRefineRequest
-	(*BuildShipRequest)(nil),       // 42: protocol.BuildShipRequest
-	(*VaultAction)(nil),            // 43: protocol.VaultAction
-	(*VaultStatus)(nil),            // 44: protocol.VaultStatus
-	(*JoinCombatRequest)(nil),      // 45: protocol.JoinCombatRequest
-	(*CraftRecipeRequest)(nil),     // 46: protocol.CraftRecipeRequest
-	(*RecipeProto)(nil),            // 47: protocol.RecipeProto
-	(*CraftJobProto)(nil),          // 48: protocol.CraftJobProto
-	(*ProductionStatus)(nil),       // 49: protocol.ProductionStatus
-	(*SkillProto)(nil),             // 50: protocol.SkillProto
-	(*PlayerProgressMsg)(nil),      // 51: protocol.PlayerProgressMsg
-	(*StartResearchRequest)(nil),   // 52: protocol.StartResearchRequest
-	(*ResearchProjectProto)(nil),   // 53: protocol.ResearchProjectProto
-	(*ResearchStatus)(nil),         // 54: protocol.ResearchStatus
-	(*BuildBaseRequest)(nil),       // 55: protocol.BuildBaseRequest
-	(*UpgradeBaseRequest)(nil),     // 56: protocol.UpgradeBaseRequest
-	(*DevelopPlanetRequest)(nil),   // 57: protocol.DevelopPlanetRequest
-	nil,                            // 58: protocol.FleetShipProto.FittedWeaponsEntry
-	nil,                            // 59: protocol.FleetStatusShip.FittedWeaponsEntry
-	nil,                            // 60: protocol.HullmodDefProto.OpCostBySizeEntry
-	nil,                            // 61: protocol.HangarData.OwnedModulesEntry
-	nil,                            // 62: protocol.FitShipRequest.FittedWeaponsEntry
-	nil,                            // 63: protocol.RecipeProto.InputsEntry
-	nil,                            // 64: protocol.RecipeProto.OutputsEntry
+	(*FireEvent)(nil),              // 12: protocol.FireEvent
+	(*MissileState)(nil),           // 13: protocol.MissileState
+	(*WorldSnapshot)(nil),          // 14: protocol.WorldSnapshot
+	(*DeltaSnapshot)(nil),          // 15: protocol.DeltaSnapshot
+	(*DamageEvent)(nil),            // 16: protocol.DamageEvent
+	(*DeathEvent)(nil),             // 17: protocol.DeathEvent
+	(*ChatMessage)(nil),            // 18: protocol.ChatMessage
+	(*MarketItem)(nil),             // 19: protocol.MarketItem
+	(*MarketData)(nil),             // 20: protocol.MarketData
+	(*ItemInstanceProto)(nil),      // 21: protocol.ItemInstanceProto
+	(*InventoryUpdate)(nil),        // 22: protocol.InventoryUpdate
+	(*Pong)(nil),                   // 23: protocol.Pong
+	(*ServerCommand)(nil),          // 24: protocol.ServerCommand
+	(*FleetShipProto)(nil),         // 25: protocol.FleetShipProto
+	(*FleetShipTactics)(nil),       // 26: protocol.FleetShipTactics
+	(*SetFleetTactics)(nil),        // 27: protocol.SetFleetTactics
+	(*FleetStatusShip)(nil),        // 28: protocol.FleetStatusShip
+	(*FleetStatus)(nil),            // 29: protocol.FleetStatus
+	(*FleetFormationSlot)(nil),     // 30: protocol.FleetFormationSlot
+	(*SetFleetFormation)(nil),      // 31: protocol.SetFleetFormation
+	(*ColonyEntry)(nil),            // 32: protocol.ColonyEntry
+	(*ColoniesStatus)(nil),         // 33: protocol.ColoniesStatus
+	(*WeaponSlotProto)(nil),        // 34: protocol.WeaponSlotProto
+	(*HullDefProto)(nil),           // 35: protocol.HullDefProto
+	(*WeaponDefProto)(nil),         // 36: protocol.WeaponDefProto
+	(*HullmodDefProto)(nil),        // 37: protocol.HullmodDefProto
+	(*HangarData)(nil),             // 38: protocol.HangarData
+	(*FitShipRequest)(nil),         // 39: protocol.FitShipRequest
+	(*PlayerMigrationPayload)(nil), // 40: protocol.PlayerMigrationPayload
+	(*SystemTransferRequest)(nil),  // 41: protocol.SystemTransferRequest
+	(*SystemTransferResponse)(nil), // 42: protocol.SystemTransferResponse
+	(*CreateCorpRequest)(nil),      // 43: protocol.CreateCorpRequest
+	(*CreateCorpResponse)(nil),     // 44: protocol.CreateCorpResponse
+	(*InviteCorpRequest)(nil),      // 45: protocol.InviteCorpRequest
+	(*JoinCorpRequest)(nil),        // 46: protocol.JoinCorpRequest
+	(*StartRefineRequest)(nil),     // 47: protocol.StartRefineRequest
+	(*BuildShipRequest)(nil),       // 48: protocol.BuildShipRequest
+	(*VaultAction)(nil),            // 49: protocol.VaultAction
+	(*VaultStatus)(nil),            // 50: protocol.VaultStatus
+	(*JoinCombatRequest)(nil),      // 51: protocol.JoinCombatRequest
+	(*CraftRecipeRequest)(nil),     // 52: protocol.CraftRecipeRequest
+	(*RecipeProto)(nil),            // 53: protocol.RecipeProto
+	(*CraftJobProto)(nil),          // 54: protocol.CraftJobProto
+	(*ProductionStatus)(nil),       // 55: protocol.ProductionStatus
+	(*SkillProto)(nil),             // 56: protocol.SkillProto
+	(*PlayerProgressMsg)(nil),      // 57: protocol.PlayerProgressMsg
+	(*StartResearchRequest)(nil),   // 58: protocol.StartResearchRequest
+	(*ResearchProjectProto)(nil),   // 59: protocol.ResearchProjectProto
+	(*ResearchStatus)(nil),         // 60: protocol.ResearchStatus
+	(*BuildBaseRequest)(nil),       // 61: protocol.BuildBaseRequest
+	(*UpgradeBaseRequest)(nil),     // 62: protocol.UpgradeBaseRequest
+	(*DevelopPlanetRequest)(nil),   // 63: protocol.DevelopPlanetRequest
+	(*JettisonInput)(nil),          // 64: protocol.JettisonInput
+	(*QueryActionsRequest)(nil),    // 65: protocol.QueryActionsRequest
+	(*ActionDef)(nil),              // 66: protocol.ActionDef
+	(*TargetActions)(nil),          // 67: protocol.TargetActions
+	(*AttackNpcRequest)(nil),       // 68: protocol.AttackNpcRequest
+	(*SetFollowRequest)(nil),       // 69: protocol.SetFollowRequest
+	(*HailRequest)(nil),            // 70: protocol.HailRequest
+	(*HailResponse)(nil),           // 71: protocol.HailResponse
+	(*ScanContainerRequest)(nil),   // 72: protocol.ScanContainerRequest
+	(*ContainerContents)(nil),      // 73: protocol.ContainerContents
+	nil,                            // 74: protocol.FleetShipProto.FittedWeaponsEntry
+	nil,                            // 75: protocol.FleetStatusShip.FittedWeaponsEntry
+	nil,                            // 76: protocol.HullmodDefProto.OpCostBySizeEntry
+	nil,                            // 77: protocol.HangarData.OwnedModulesEntry
+	nil,                            // 78: protocol.FitShipRequest.FittedWeaponsEntry
+	nil,                            // 79: protocol.RecipeProto.InputsEntry
+	nil,                            // 80: protocol.RecipeProto.OutputsEntry
 }
 var file_pkg_protocol_messages_proto_depIdxs = []int32{
 	0,  // 0: protocol.Packet.type:type_name -> protocol.PacketType
 	11, // 1: protocol.WorldSnapshot.entities:type_name -> protocol.EntitySnapshot
-	11, // 2: protocol.DeltaSnapshot.updated_entities:type_name -> protocol.EntitySnapshot
-	17, // 3: protocol.MarketData.items:type_name -> protocol.MarketItem
-	19, // 4: protocol.InventoryUpdate.cargo:type_name -> protocol.ItemInstanceProto
-	0,  // 5: protocol.ServerCommand.type:type_name -> protocol.PacketType
-	58, // 6: protocol.FleetShipProto.fitted_weapons:type_name -> protocol.FleetShipProto.FittedWeaponsEntry
-	24, // 7: protocol.SetFleetTactics.ships:type_name -> protocol.FleetShipTactics
-	59, // 8: protocol.FleetStatusShip.fitted_weapons:type_name -> protocol.FleetStatusShip.FittedWeaponsEntry
-	26, // 9: protocol.FleetStatus.ships:type_name -> protocol.FleetStatusShip
-	28, // 10: protocol.HullDefProto.slots:type_name -> protocol.WeaponSlotProto
-	60, // 11: protocol.HullmodDefProto.op_cost_by_size:type_name -> protocol.HullmodDefProto.OpCostBySizeEntry
-	29, // 12: protocol.HangarData.hulls:type_name -> protocol.HullDefProto
-	30, // 13: protocol.HangarData.weapons:type_name -> protocol.WeaponDefProto
-	31, // 14: protocol.HangarData.hullmods:type_name -> protocol.HullmodDefProto
-	61, // 15: protocol.HangarData.owned_modules:type_name -> protocol.HangarData.OwnedModulesEntry
-	62, // 16: protocol.FitShipRequest.fitted_weapons:type_name -> protocol.FitShipRequest.FittedWeaponsEntry
-	19, // 17: protocol.PlayerMigrationPayload.cargo_items:type_name -> protocol.ItemInstanceProto
-	23, // 18: protocol.PlayerMigrationPayload.fleet_ships:type_name -> protocol.FleetShipProto
-	50, // 19: protocol.PlayerMigrationPayload.skills:type_name -> protocol.SkillProto
-	34, // 20: protocol.SystemTransferRequest.payload:type_name -> protocol.PlayerMigrationPayload
-	19, // 21: protocol.VaultStatus.personal_items:type_name -> protocol.ItemInstanceProto
-	19, // 22: protocol.VaultStatus.corporate_items:type_name -> protocol.ItemInstanceProto
-	63, // 23: protocol.RecipeProto.inputs:type_name -> protocol.RecipeProto.InputsEntry
-	64, // 24: protocol.RecipeProto.outputs:type_name -> protocol.RecipeProto.OutputsEntry
-	48, // 25: protocol.ProductionStatus.queue:type_name -> protocol.CraftJobProto
-	47, // 26: protocol.ProductionStatus.recipes:type_name -> protocol.RecipeProto
-	50, // 27: protocol.PlayerProgressMsg.skills:type_name -> protocol.SkillProto
-	53, // 28: protocol.ResearchStatus.projects:type_name -> protocol.ResearchProjectProto
-	29, // [29:29] is the sub-list for method output_type
-	29, // [29:29] is the sub-list for method input_type
-	29, // [29:29] is the sub-list for extension type_name
-	29, // [29:29] is the sub-list for extension extendee
-	0,  // [0:29] is the sub-list for field type_name
+	12, // 2: protocol.WorldSnapshot.fire_events:type_name -> protocol.FireEvent
+	13, // 3: protocol.WorldSnapshot.missiles:type_name -> protocol.MissileState
+	11, // 4: protocol.DeltaSnapshot.updated_entities:type_name -> protocol.EntitySnapshot
+	19, // 5: protocol.MarketData.items:type_name -> protocol.MarketItem
+	21, // 6: protocol.InventoryUpdate.cargo:type_name -> protocol.ItemInstanceProto
+	0,  // 7: protocol.ServerCommand.type:type_name -> protocol.PacketType
+	74, // 8: protocol.FleetShipProto.fitted_weapons:type_name -> protocol.FleetShipProto.FittedWeaponsEntry
+	26, // 9: protocol.SetFleetTactics.ships:type_name -> protocol.FleetShipTactics
+	75, // 10: protocol.FleetStatusShip.fitted_weapons:type_name -> protocol.FleetStatusShip.FittedWeaponsEntry
+	28, // 11: protocol.FleetStatus.ships:type_name -> protocol.FleetStatusShip
+	30, // 12: protocol.SetFleetFormation.slots:type_name -> protocol.FleetFormationSlot
+	32, // 13: protocol.ColoniesStatus.colonies:type_name -> protocol.ColonyEntry
+	34, // 14: protocol.HullDefProto.slots:type_name -> protocol.WeaponSlotProto
+	76, // 15: protocol.HullmodDefProto.op_cost_by_size:type_name -> protocol.HullmodDefProto.OpCostBySizeEntry
+	35, // 16: protocol.HangarData.hulls:type_name -> protocol.HullDefProto
+	36, // 17: protocol.HangarData.weapons:type_name -> protocol.WeaponDefProto
+	37, // 18: protocol.HangarData.hullmods:type_name -> protocol.HullmodDefProto
+	77, // 19: protocol.HangarData.owned_modules:type_name -> protocol.HangarData.OwnedModulesEntry
+	78, // 20: protocol.FitShipRequest.fitted_weapons:type_name -> protocol.FitShipRequest.FittedWeaponsEntry
+	21, // 21: protocol.PlayerMigrationPayload.cargo_items:type_name -> protocol.ItemInstanceProto
+	25, // 22: protocol.PlayerMigrationPayload.fleet_ships:type_name -> protocol.FleetShipProto
+	56, // 23: protocol.PlayerMigrationPayload.skills:type_name -> protocol.SkillProto
+	40, // 24: protocol.SystemTransferRequest.payload:type_name -> protocol.PlayerMigrationPayload
+	21, // 25: protocol.VaultStatus.personal_items:type_name -> protocol.ItemInstanceProto
+	21, // 26: protocol.VaultStatus.corporate_items:type_name -> protocol.ItemInstanceProto
+	79, // 27: protocol.RecipeProto.inputs:type_name -> protocol.RecipeProto.InputsEntry
+	80, // 28: protocol.RecipeProto.outputs:type_name -> protocol.RecipeProto.OutputsEntry
+	54, // 29: protocol.ProductionStatus.queue:type_name -> protocol.CraftJobProto
+	53, // 30: protocol.ProductionStatus.recipes:type_name -> protocol.RecipeProto
+	56, // 31: protocol.PlayerProgressMsg.skills:type_name -> protocol.SkillProto
+	59, // 32: protocol.ResearchStatus.projects:type_name -> protocol.ResearchProjectProto
+	66, // 33: protocol.TargetActions.actions:type_name -> protocol.ActionDef
+	21, // 34: protocol.ContainerContents.items:type_name -> protocol.ItemInstanceProto
+	35, // [35:35] is the sub-list for method output_type
+	35, // [35:35] is the sub-list for method input_type
+	35, // [35:35] is the sub-list for extension type_name
+	35, // [35:35] is the sub-list for extension extendee
+	0,  // [0:35] is the sub-list for field type_name
 }
 
 func init() { file_pkg_protocol_messages_proto_init() }
@@ -5124,7 +6376,7 @@ func file_pkg_protocol_messages_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_protocol_messages_proto_rawDesc), len(file_pkg_protocol_messages_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   64,
+			NumMessages:   80,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

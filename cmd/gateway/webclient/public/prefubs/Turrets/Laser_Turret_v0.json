@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "id": "Laser_Turret_v0",
+  "name": "Laser Turret",
+  "kind": "beam",
+  "visual": {
+    "size": [
+      1.5,
+      1.2
+    ],
+    "texture": "/turrel_laser.png",
+    "normalMap": "/turrel_lasern.png",
+    "roughness": 0.4,
+    "metalness": 0.6
+  },
+  "pivot": {
+    "x": 0,
+    "y": 0,
+    "z": 0
+  },
+  "rotationOrigin": {
+    "x": -0.15,
+    "y": 0,
+    "z": 0
+  },
+  "rotation": {
+    "minAngle": -0.5235987755982988,
+    "maxAngle": 0.5235987755982988,
+    "turnSpeed": 0.9
+  },
+  "beam": {
+    "emitters": [
+      {
+        "id": "emitter-1",
+        "localPosition": {
+          "x": 0.75,
+          "y": 0.25,
+          "z": 0
+        },
+        "beamLength": 50,
+        "beamWidth": 0.08,
+        "ramp": {
+          "rampUp": 3,
+          "rampDown": 5
+        },
+        "intensity": {
+          "lightMultiplier": 15,
+          "jitterShaderMin": 0.8,
+          "jitterShaderMax": 1.2,
+          "jitterLightExtra": 5
+        },
+        "colors": {
+          "core": {
+            "r": 1,
+            "g": 0.8,
+            "b": 0.8
+          },
+          "glow": {
+            "r": 1,
+            "g": 0,
+            "b": 0.1
+          }
+        },
+        "shader": {
+          "alphaPowX": 3,
+          "alphaPowY": 2,
+          "glowMix": 1.5
+        },
+        "pointLight": {
+          "enabled": true,
+          "color": "#ff0000",
+          "distance": 0.8,
+          "decay": 2
+        },
+        "lightPosition": {
+          "x": 1.8,
+          "y": 0,
+          "z": 0.5
+        }
+      },
+      {
+        "id": "emitter-1-copy",
+        "localPosition": {
+          "x": 0.75,
+          "y": -0.2,
+          "z": 0
+        },
+        "beamLength": 50,
+        "beamWidth": 0.08,
+        "ramp": {
+          "rampUp": 3,
+          "rampDown": 5
+        },
+        "intensity": {
+          "lightMultiplier": 15,
+          "jitterShaderMin": 0.8,
+          "jitterShaderMax": 1.2,
+          "jitterLightExtra": 5
+        },
+        "colors": {
+          "core": {
+            "r": 1,
+            "g": 0.8,
+            "b": 0.8
+          },
+          "glow": {
+            "r": 1,
+            "g": 0,
+            "b": 0.1
+          }
+        },
+        "shader": {
+          "alphaPowX": 3,
+          "alphaPowY": 2,
+          "glowMix": 1.5
+        },
+        "pointLight": {
+          "enabled": true,
+          "color": "#ff0000",
+          "distance": 0.8,
+          "decay": 2
+        },
+        "lightPosition": {
+          "x": 1.8,
+          "y": 0,
+          "z": 0.5
+        }
+      }
+    ]
+  }
+}

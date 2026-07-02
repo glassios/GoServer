@@ -117,12 +117,9 @@ func ExecuteTrade(world *ecs.World, playerID, stationID domain.EntityID, resourc
 			return domain.ErrOutOfRange // Not enough stock on station
 		}
 
-		// Check cargo space
-		currentVolume := int32(0)
-		for _, it := range cargo.Items {
-			currentVolume += it.Quantity
-		}
-		if currentVolume+amount > cargo.Capacity {
+		// Check cargo space (capacity is measured in VOLUME units)
+		addVol := float32(amount) * domain.VolumeForID(domain.ResourceToID[resource])
+		if cargo.LoadVolume()+addVol > float32(cargo.Capacity) {
 			return domain.ErrCargoFull
 		}
 

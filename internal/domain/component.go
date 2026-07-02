@@ -78,6 +78,23 @@ type CombatFx struct {
 	LastDamageType string
 }
 
+// FireEvent is a transient, per-tick record that a weapon discharged a *traveling* shot
+// (projectile class). The server does NOT simulate the projectile — CombatSystem applies the
+// damage instantly — this is streamed to the client purely so it can draw the shot flying from
+// Origin toward Target (thin channel, IMPLEMENTATION_PLAN §2.2). Buffered per combat instance and
+// drained into each tick's snapshot.
+type FireEvent struct {
+	AttackerID  EntityID
+	TargetID    EntityID
+	OriginX     float32
+	OriginY     float32
+	TargetX     float32
+	TargetY     float32
+	Speed       float32 // world units/sec (client flight speed)
+	DamageType  string
+	WeaponClass string
+}
+
 type Weapon struct {
 	Type     WeaponType
 	Damage   int32
@@ -117,6 +134,24 @@ type AIState struct {
 type FactionMember struct {
 	FactionID  uint32
 	Reputation map[uint32]int32 // faction_id -> reputation value
+}
+
+// FollowOrder makes an entity (typically the player) steer toward TargetID and hold
+// a standoff distance, instead of integrating raw Velocity. Cleared by a manual move
+// command or when the target disappears.
+type FollowOrder struct {
+	TargetID    EntityID
+	StandoffMin float32 // stop when closer than this
+	StandoffMax float32 // full speed when farther than this
+}
+
+// PendingJoin marks a player who chose to join a combat instance but must first fly
+// to the battle marker (paired with a FollowOrder toward MarkerID). Once within range
+// the world node calls JoinCombatInstance with the resolved AlignFleetID.
+type PendingJoin struct {
+	InstanceID   uint32
+	AlignFleetID EntityID // fleet to side with (0 = free for all)
+	MarkerID     EntityID
 }
 
 type ShipConfig struct {
@@ -181,6 +216,12 @@ type FleetShip struct {
 	FittedHullmods []string          // mod_id list
 	Vents          int32
 	Capacitors     int32
+
+	// Pre-battle formation slot (set from the FLEET screen). Ships are sorted by (Rank, Col)
+	// before a fight so the front-left ship leads (flagship), and UnpackFleet places each ship
+	// at its rank/column offset in the arena. See Fleet.HasFormation.
+	FormationRank int32
+	FormationCol  int32
 }
 
 // EffectiveConfig resolves a ship's fitting into a ShipConfiguration ready for ComputeStats /
@@ -215,6 +256,9 @@ func (fs *FleetShip) EffectiveConfig() *ShipConfiguration {
 
 type Fleet struct {
 	Ships []FleetShip
+	// HasFormation is true once the player has arranged a battle line; it switches UnpackFleet
+	// from the default semicircle escort placement to rank/column formation placement.
+	HasFormation bool
 }
 
 type CorporationMember struct {
@@ -246,6 +290,32 @@ type Shipyard struct {
 
 // SpaceBase is a player-built structure (Phase 5). Health lives in the standard Health component;
 // Level scales its durability and (later) production/defense. OwnerID gates upgrades.
+// Missile is a live, flying missile entity in a combat instance (Phase B4). Unlike hitscan/
+// projectile weapons (instant authoritative damage), a missile-class mount spawns one of these:
+// it homes toward TargetID, applies its damage on proximity, and can be shot down by point-defense
+// before it arrives. MissileSystem owns its whole lifecycle (movement, hit, expiry, interception).
+type Missile struct {
+	TargetID   EntityID
+	OwnerID    EntityID // firing ship (for attribution / no friendly PD confusion)
+	TeamID     uint32   // firing team (PD only intercepts enemy missiles; no team self-hit)
+	Damage     float32
+	DamageType string
+	Speed      float32 // world units/sec
+	TurnRate   float32 // radians/sec homing agility
+	Life       float32 // seconds remaining before it fizzles
+	Guidance   string  // "" straight-homing | "weave" sinusoidal weave toward target (Phase B4)
+	Age        float32 // seconds since launch (drives the weave phase)
+}
+
+// SubsystemState tracks temporary subsystem disables from missile strikes (Phase B4). A missile
+// that penetrates to armor/hull disables a subsystem for a few seconds: EngineHitTimer > 0 cuts the
+// ship's thrust (it drifts slower); WeaponHitTimer > 0 suppresses its weapon fire. Both decay each
+// tick in CombatSystem.Update. Added to every ship when a fleet is unpacked into a combat instance.
+type SubsystemState struct {
+	EngineHitTimer float32
+	WeaponHitTimer float32
+}
+
 type SpaceBase struct {
 	OwnerID uint64
 	Level   int32
@@ -374,6 +444,47 @@ var IDToResource = map[uint32]ResourceType{
 	15: "Heavy Blaster",
 	16: "Heavy Mauler",
 	17: "Hellbore Cannon",
+}
+
+// ItemVolume is the per-unit cargo volume (matches item_definitions seed, migration 005).
+// Cargo load is measured in volume units, and total load may not exceed Cargo.Capacity
+// (which is the sum of the fleet's per-ship cargo capacities).
+var ItemVolume = map[uint32]float32{
+	1: 0.1, 2: 0.2, 3: 0.5, 4: 0.3, 5: 0.15, 6: 0.25,
+	7: 2.0, 8: 3.0, 9: 50.0, 10: 80.0,
+	11: 0.15, 12: 0.2, 13: 0.05, 14: 0.1,
+	15: 2.0, 16: 2.0, 17: 2.5,
+}
+
+// VolumeForID returns the per-unit volume for an item definition (defaults to 1.0).
+func VolumeForID(defID uint32) float32 {
+	if v, ok := ItemVolume[defID]; ok {
+		return v
+	}
+	return 1.0
+}
+
+// CategoryForID returns the item category used by the inventory UI.
+func CategoryForID(defID uint32) string {
+	switch {
+	case defID == 7 || defID == 8 || (defID >= 15 && defID <= 17):
+		return "module"
+	case defID == 9 || defID == 10:
+		return "ship"
+	case defID == 5 || defID == 6 || (defID >= 11 && defID <= 14):
+		return "material"
+	default:
+		return "resource"
+	}
+}
+
+// LoadVolume returns the current cargo load measured in volume units.
+func (c *Cargo) LoadVolume() float32 {
+	var total float32
+	for _, item := range c.Items {
+		total += float32(item.Quantity) * VolumeForID(item.DefinitionID)
+	}
+	return total
 }
 
 func (c *Cargo) GetQuantity(defID uint32) int32 {

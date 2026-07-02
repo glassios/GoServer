@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"math"
 	"os"
 	"os/signal"
+	"sort"
 	"syscall"
 	"time"
 
@@ -141,8 +143,10 @@ func main() {
 
 	// Create and register systems
 	moveSys := systems.NewMovementSystem(cfg.Grid.WorldWidth, cfg.Grid.WorldHeight)
+	moveSys.SetGrid(grid) // keep the spatial index live so AI/visibility queries aren't stale
 	visSys := systems.NewVisibilitySystem(grid)
 	aiSys := systems.NewAISystem(500.0, 50, cfg.Grid.WorldWidth, cfg.Grid.WorldHeight) // Max 50 NPCs
+	aiSys.SetGrid(grid)                                                                // neighbour searches via grid broadphase
 	combatSys := systems.NewCombatSystem(nil)
 	miningSys := systems.NewMiningSystem(nil)
 	miningSys.SetProgressBus(bus) // push skill/XP updates to mining players (Phase 3)
@@ -336,6 +340,27 @@ func main() {
 					logger.Info("Created fresh player entity", zap.Uint64("playerID", uint64(playerID)), zap.String("name", string(cmd.Payload)))
 				}
 			}
+
+			// On (re)connect, clear stale transient action/movement state so the player lands
+			// controllable. If the previous session dropped mid-action (e.g. a frozen client
+			// couldn't send shoot{active:false}), a leftover active Weapon would otherwise make
+			// MovementSystem steer the ship at its old target and ignore manual move commands.
+			if vVal, ok := world.GetComponent(playerID, domain.Velocity{}); ok {
+				v := vVal.(*domain.Velocity)
+				v.X = 0
+				v.Y = 0
+			}
+			if wVal, ok := world.GetComponent(playerID, domain.Weapon{}); ok {
+				w := wVal.(*domain.Weapon)
+				w.Active = false
+				w.TargetID = 0
+			}
+			if lVal, ok := world.GetComponent(playerID, domain.MiningLaser{}); ok {
+				l := lVal.(*domain.MiningLaser)
+				l.Active = false
+				l.TargetID = 0
+			}
+
 			// Push the fleet roster (with tactics) to the client on auth/reconnect.
 			sendFleetStatus(world, bus, playerID)
 			// Push the crafting catalog + any in-flight queue so the production panel can populate.
@@ -344,6 +369,31 @@ func main() {
 			systems.PublishPlayerProgress(bus, world, playerID)
 			// Push research status so the research panel can populate.
 			systems.PublishResearchStatus(bus, world, playerID)
+			// Push colony overview (owned bases + claimed planets).
+			sendColonies(world, bus, playerID, systemID)
+
+			// Cargo capacity = sum of the fleet's per-ship cargo volumes; then push the
+			// initial inventory so the client shows the real (possibly empty) hold, not a mock.
+			if cVal, okC := world.GetComponent(playerID, domain.Cargo{}); okC {
+				cargo := cVal.(*domain.Cargo)
+				if flVal, okF := world.GetComponent(playerID, domain.Fleet{}); okF {
+					if capV := fleetCargoCapacity(flVal.(*domain.Fleet)); capV > 0 {
+						cargo.Capacity = capV
+					}
+				}
+			}
+			sendInventoryUpdate(world, bus, playerID)
+
+		case protocol.PacketType_C_JETTISON_INPUT:
+			var req protocol.JettisonInput
+			if err := proto.Unmarshal(cmd.Payload, &req); err == nil {
+				if executeJettison(world, grid, playerID, req.Resource, req.Amount) {
+					sendInventoryUpdate(world, bus, playerID)
+					sendSystemChat(bus, playerID, fmt.Sprintf("Выброшено %d %s", req.Amount, req.Resource))
+				} else {
+					sendSystemChat(bus, playerID, "Ошибка выброса: предмета недостаточно в трюме")
+				}
+			}
 
 		case protocol.PacketType_C_SET_FLEET_TACTICS:
 			var req protocol.SetFleetTactics
@@ -368,6 +418,39 @@ func main() {
 					}
 				}
 			}
+
+		case protocol.PacketType_C_SET_FLEET_FORMATION:
+			var req protocol.SetFleetFormation
+			if err := proto.Unmarshal(cmd.Payload, &req); err == nil {
+				if flVal, ok := world.GetComponent(playerID, domain.Fleet{}); ok {
+					fleet := flVal.(*domain.Fleet)
+					// Apply the requested rank/column to each named ship.
+					for _, sl := range req.Slots {
+						for i := range fleet.Ships {
+							if fleet.Ships[i].ShipID == sl.ShipId {
+								fleet.Ships[i].FormationRank = sl.Rank
+								fleet.Ships[i].FormationCol = sl.Col
+							}
+						}
+					}
+					// Reorder the fleet by (rank, col) so the front-left ship becomes the flagship
+					// (index 0 keeps the player entity ID on unpack).
+					sort.SliceStable(fleet.Ships, func(a, b int) bool {
+						if fleet.Ships[a].FormationRank != fleet.Ships[b].FormationRank {
+							return fleet.Ships[a].FormationRank < fleet.Ships[b].FormationRank
+						}
+						return fleet.Ships[a].FormationCol < fleet.Ships[b].FormationCol
+					})
+					fleet.HasFormation = true
+					sendFleetStatus(world, bus, playerID)
+					if playerRepo != nil {
+						savePlayerNow(world, playerRepo, playerID, logger)
+					}
+				}
+			}
+
+		case protocol.PacketType_C_GET_COLONIES:
+			sendColonies(world, bus, playerID, systemID)
 
 		case protocol.PacketType_C_GET_HANGAR:
 			sendHangarData(world, bus, playerID)
@@ -565,12 +648,31 @@ func main() {
 		case protocol.PacketType_C_JOIN_COMBAT_REQUEST:
 			var joinReq protocol.JoinCombatRequest
 			if err := proto.Unmarshal(cmd.Payload, &joinReq); err == nil {
-				err := instanceManager.JoinCombatInstance(world, joinReq.CombatInstanceId, playerID, domain.EntityID(joinReq.AlignWithFleetId))
-				if err != nil {
-					logger.Warn("Player failed to join combat instance", zap.Uint64("playerID", uint64(playerID)), zap.Error(err))
-					sendSystemChat(bus, playerID, fmt.Sprintf("Ошибка входа в бой: %s", err.Error()))
+				// Find the battle marker for this instance to (a) resolve the chosen side to a
+				// real fleet id at full precision and (b) get a target to fly toward.
+				markerID, attackerID, defenderID, found := findCombatMarker(world, joinReq.CombatInstanceId)
+				if !found {
+					sendSystemChat(bus, playerID, "Бой не найден")
+				} else if csVal, inCombat := world.GetComponent(playerID, domain.CombatState{}); inCombat && csVal.(*domain.CombatState).InCombat {
+					sendSystemChat(bus, playerID, "Вы уже в бою")
 				} else {
-					logger.Info("Player joined combat instance successfully", zap.Uint64("playerID", uint64(playerID)), zap.Uint32("instanceID", joinReq.CombatInstanceId))
+					align := domain.EntityID(joinReq.AlignWithFleetId)
+					switch joinReq.Side {
+					case "attacker":
+						align = attackerID
+					case "defender":
+						align = defenderID
+					}
+					// Approach the battle, then join when in range (see PendingJoin handling in
+					// loop.OnSnapshot). Mirrors the attack flow.
+					clearOngoingOrders(world, playerID, "join")
+					world.AddComponent(playerID, &domain.FollowOrder{TargetID: markerID, StandoffMin: 80, StandoffMax: 120})
+					world.AddComponent(playerID, &domain.PendingJoin{
+						InstanceID:   joinReq.CombatInstanceId,
+						AlignFleetID: align,
+						MarkerID:     markerID,
+					})
+					sendSystemChat(bus, playerID, "Сближаюсь с боем...")
 				}
 			}
 
@@ -617,6 +719,74 @@ func main() {
 						TargetID: domain.EntityID(mineInput.TargetId),
 					},
 				})
+			}
+
+		case protocol.PacketType_C_QUERY_ACTIONS:
+			var req protocol.QueryActionsRequest
+			if err := proto.Unmarshal(cmd.Payload, &req); err == nil {
+				sendTargetActions(world, bus, playerID, domain.EntityID(req.TargetId))
+			}
+
+		case protocol.PacketType_C_ATTACK_NPC_REQUEST:
+			var req protocol.AttackNpcRequest
+			if err := proto.Unmarshal(cmd.Payload, &req); err == nil {
+				targetID := domain.EntityID(req.TargetId)
+				if ok, reason := canAttack(world, playerID, targetID); !ok {
+					sendSystemChat(bus, playerID, "Невозможно атаковать: "+reason)
+				} else {
+					// Set the weapon target: MovementSystem flies us toward the target and
+					// FleetEngagementSystem spins up the combat instance once we're in
+					// engagement range (so out-of-range attacks approach first, then engage).
+					// Routed through the gameloop "shoot" command, which also cancels
+					// mining/escort. Works on both NPCs and other players.
+					loop.EnqueueCommand(gameloop.Command{
+						PlayerID: playerID,
+						Type:     "shoot",
+						Payload: struct {
+							Active   bool
+							TargetID domain.EntityID
+						}{Active: true, TargetID: targetID},
+					})
+					sendSystemChat(bus, playerID, "Атакую цель")
+				}
+			}
+
+		case protocol.PacketType_C_SET_FOLLOW:
+			var req protocol.SetFollowRequest
+			if err := proto.Unmarshal(cmd.Payload, &req); err == nil {
+				targetID := domain.EntityID(req.TargetId)
+				if targetID == 0 {
+					world.RemoveComponent(playerID, domain.FollowOrder{})
+					sendSystemChat(bus, playerID, "Следование отменено")
+				} else if tType, exists := world.GetEntityType(targetID); exists && targetID != playerID {
+					clearOngoingOrders(world, playerID, "follow") // escort cancels mining/attack
+					// Loot containers need a tight standoff so we end up inside the
+					// LootSystem pickup radius (50u); ships keep a comfortable escort gap.
+					minStandoff, maxStandoff := float32(100), float32(200)
+					msg := "Следую за целью"
+					if tType == domain.EntityLootContainer {
+						minStandoff, maxStandoff = 15, 30
+						msg = "Лечу за контейнером"
+					}
+					world.AddComponent(playerID, &domain.FollowOrder{
+						TargetID:    targetID,
+						StandoffMin: minStandoff,
+						StandoffMax: maxStandoff,
+					})
+					sendSystemChat(bus, playerID, msg)
+				}
+			}
+
+		case protocol.PacketType_C_HAIL:
+			var req protocol.HailRequest
+			if err := proto.Unmarshal(cmd.Payload, &req); err == nil {
+				sendHailResponse(world, bus, playerID, domain.EntityID(req.TargetId))
+			}
+
+		case protocol.PacketType_C_SCAN_CONTAINER:
+			var req protocol.ScanContainerRequest
+			if err := proto.Unmarshal(cmd.Payload, &req); err == nil {
+				sendContainerContents(world, bus, playerID, domain.EntityID(req.TargetId))
 			}
 
 		case protocol.PacketType_C_CREATE_CORP_REQUEST:
@@ -976,9 +1146,43 @@ func main() {
 	// 8. Bind snapshot broadcast to GameLoop
 	outputTopic := fmt.Sprintf("system.%d.output", systemID)
 	loop.OnSnapshot = func(tick uint64) {
+		// Push a fresh inventory list to any player who auto-picked-up loot or mined this
+		// tick (neither has a client command, so the item list would otherwise be stale).
+		for _, pid := range lootSys.DrainPickups() {
+			sendInventoryUpdate(world, bus, pid)
+		}
+		for _, pid := range miningSys.DrainUpdated() {
+			sendInventoryUpdate(world, bus, pid)
+		}
+
+		// Players who chose a side and are flying to a battle join it once in range
+		// (approach-then-join, like the attack flow).
+		const joinRange = float32(140)
+		for _, pid := range world.Query(ecs.BuildMask(domain.PendingJoin{})) {
+			pjVal, ok := world.GetComponent(pid, domain.PendingJoin{})
+			if !ok {
+				continue
+			}
+			pj := pjVal.(*domain.PendingJoin)
+			if _, alive := world.GetEntityType(pj.MarkerID); !alive {
+				world.RemoveComponent(pid, domain.PendingJoin{})
+				world.RemoveComponent(pid, domain.FollowOrder{})
+				sendSystemChat(bus, pid, "Бой завершился")
+				continue
+			}
+			if d, okD := entityDist(world, pid, pj.MarkerID); okD && d <= joinRange {
+				err := instanceManager.JoinCombatInstance(world, pj.InstanceID, pid, pj.AlignFleetID)
+				world.RemoveComponent(pid, domain.PendingJoin{})
+				world.RemoveComponent(pid, domain.FollowOrder{})
+				if err != nil {
+					sendSystemChat(bus, pid, fmt.Sprintf("Ошибка входа в бой: %s", err.Error()))
+				}
+			}
+		}
+
 		// Build and serialize a WorldSnapshot containing all active entities in this system
-		var entSnaps []*protocol.EntitySnapshot
 		allEntities := world.Query(0)
+		entSnaps := make([]*protocol.EntitySnapshot, 0, len(allEntities))
 		for _, id := range allEntities {
 			snap := network.BuildEntitySnapshot(world, id)
 			if snap != nil {
@@ -1413,11 +1617,69 @@ func sendFleetStatus(world *ecs.World, bus messaging.MessageBus, playerID domain
 			PreviewMaxSpeed:        stats.MaxSpeed,
 			PreviewMaxFlux:         stats.MaxFlux,
 			PreviewFluxDissipation: stats.FluxDissipation,
+			FormationRank:          s.FormationRank,
+			FormationCol:           s.FormationCol,
 		})
 	}
 	status := &protocol.FleetStatus{Ships: ships}
 	payload, _ := proto.Marshal(status)
 	packet := &protocol.Packet{Type: protocol.PacketType_S_FLEET_STATUS, Payload: payload}
+	packetData, _ := proto.Marshal(packet)
+	_ = bus.Publish(fmt.Sprintf("player.%d.response", playerID), packetData)
+}
+
+// sendColonies pushes the player's owned space bases + claimed planets (in this system) to the
+// colony overview screen. Income mirrors BaseProductionSystem's per-cycle yield (bases produce
+// Level*2 IronPlates, planets DevelopmentLevel*25 credits).
+func sendColonies(world *ecs.World, bus messaging.MessageBus, playerID domain.EntityID, systemID uint32) {
+	colonies := make([]*protocol.ColonyEntry, 0)
+	for _, baseID := range world.Query(ecs.BuildMask(domain.SpaceBase{})) {
+		bVal, _ := world.GetComponent(baseID, domain.SpaceBase{})
+		base := bVal.(*domain.SpaceBase)
+		if base.OwnerID != uint64(playerID) {
+			continue
+		}
+		e := &protocol.ColonyEntry{
+			EntityId:   uint64(baseID),
+			Kind:       "base",
+			Level:      base.Level,
+			Income:     int64(base.Level) * 2,
+			IncomeUnit: "IronPlates",
+			SystemId:   systemID,
+		}
+		if tVal, ok := world.GetComponent(baseID, domain.Transform{}); ok {
+			t := tVal.(*domain.Transform)
+			e.X, e.Y = t.X, t.Y
+		}
+		if hVal, ok := world.GetComponent(baseID, domain.Health{}); ok {
+			h := hVal.(*domain.Health)
+			e.Health, e.MaxHealth = h.Current, h.Max
+		}
+		colonies = append(colonies, e)
+	}
+	for _, planetID := range world.Query(ecs.BuildMask(domain.Planet{})) {
+		pVal, _ := world.GetComponent(planetID, domain.Planet{})
+		planet := pVal.(*domain.Planet)
+		if planet.OwnerID != uint64(playerID) {
+			continue
+		}
+		e := &protocol.ColonyEntry{
+			EntityId:   uint64(planetID),
+			Kind:       "planet",
+			Level:      planet.DevelopmentLevel,
+			Income:     int64(planet.DevelopmentLevel) * 25,
+			IncomeUnit: "cr",
+			SystemId:   systemID,
+		}
+		if tVal, ok := world.GetComponent(planetID, domain.Transform{}); ok {
+			t := tVal.(*domain.Transform)
+			e.X, e.Y = t.X, t.Y
+		}
+		colonies = append(colonies, e)
+	}
+	status := &protocol.ColoniesStatus{Colonies: colonies}
+	payload, _ := proto.Marshal(status)
+	packet := &protocol.Packet{Type: protocol.PacketType_S_COLONIES_STATUS, Payload: payload}
 	packetData, _ := proto.Marshal(packet)
 	_ = bus.Publish(fmt.Sprintf("player.%d.response", playerID), packetData)
 }
@@ -1553,6 +1815,56 @@ func savePlayerNow(world *ecs.World, repo domain.PlayerRepository, playerID doma
 	}
 }
 
+// fleetCargoCapacity sums the per-ship cargo capacities (volume units) of a fleet.
+// Returns 0 for an empty/nil fleet so callers can keep a sensible default.
+func fleetCargoCapacity(fleet *domain.Fleet) int32 {
+	if fleet == nil {
+		return 0
+	}
+	var total int32
+	for _, s := range fleet.Ships {
+		total += s.CargoCapacity
+	}
+	return total
+}
+
+// executeJettison removes `amount` of a cargo resource from the player and drops it
+// into space as a loot container near the player. Returns false if the player lacks
+// the items. The container is auto-picked-up by anyone in range (LootSystem).
+func executeJettison(world *ecs.World, grid *spatial.HashGrid, playerID domain.EntityID, resource string, amount int32) bool {
+	if amount <= 0 {
+		return false
+	}
+	cargoVal, ok := world.GetComponent(playerID, domain.Cargo{})
+	if !ok {
+		return false
+	}
+	cargo := cargoVal.(*domain.Cargo)
+	res := domain.ResourceType(resource)
+	defID := domain.ResourceToID[res]
+	if defID == 0 || cargo.GetResourceTypeQuantity(res) < amount {
+		return false
+	}
+	cargo.RemoveResourceTypeQuantity(res, amount)
+
+	var px, py float32
+	if tVal, okT := world.GetComponent(playerID, domain.Transform{}); okT {
+		t := tVal.(*domain.Transform)
+		px, py = t.X+30, t.Y+30 // small offset so it isn't instantly re-grabbed on top of us
+	}
+	lootEntity := world.CreateEntity(domain.EntityLootContainer)
+	world.AddComponent(lootEntity, &domain.Transform{X: px, Y: py})
+	world.AddComponent(lootEntity, &domain.Loot{Credits: 0})
+	world.AddComponent(lootEntity, &domain.Cargo{
+		Capacity: 999999,
+		Items:    []domain.ItemInstance{{DefinitionID: defID, Quantity: amount, State: "normal"}},
+	})
+	if grid != nil {
+		grid.Insert(lootEntity, px, py)
+	}
+	return true
+}
+
 func sendInventoryUpdate(world *ecs.World, bus messaging.MessageBus, playerID domain.EntityID) {
 	pDataVal, foundP := world.GetComponent(playerID, domain.PlayerData{})
 	cargoVal, foundC := world.GetComponent(playerID, domain.Cargo{})
@@ -1573,6 +1885,9 @@ func sendInventoryUpdate(world *ecs.World, bus messaging.MessageBus, playerID do
 			OwnerId:      uint64(playerID),
 			State:        item.State,
 			Name:         string(domain.IDToResource[item.DefinitionID]),
+			Volume:       domain.VolumeForID(item.DefinitionID),
+			Category:     domain.CategoryForID(item.DefinitionID),
+			Stackable:    item.DefinitionID <= 6 || (item.DefinitionID >= 11 && item.DefinitionID <= 14),
 		})
 	}
 
@@ -1585,6 +1900,312 @@ func sendInventoryUpdate(world *ecs.World, bus messaging.MessageBus, playerID do
 		Type:    protocol.PacketType_S_INVENTORY_UPDATE,
 		Payload: payload,
 	}
+	packetData, _ := proto.Marshal(packet)
+	_ = bus.Publish(fmt.Sprintf("player.%d.response", playerID), packetData)
+}
+
+// clearOngoingOrders cancels the player's continuous orders (mining / weapon target /
+// follow), leaving the one named in `keep`. This enforces "any new action interrupts the
+// previous one" — e.g. starting mining cancels an escort, moving cancels mining, etc.
+func clearOngoingOrders(world *ecs.World, playerID domain.EntityID, keep string) {
+	if keep != "mine" {
+		if lVal, ok := world.GetComponent(playerID, domain.MiningLaser{}); ok {
+			l := lVal.(*domain.MiningLaser)
+			l.Active = false
+			l.TargetID = 0
+		}
+	}
+	if keep != "shoot" {
+		if wVal, ok := world.GetComponent(playerID, domain.Weapon{}); ok {
+			w := wVal.(*domain.Weapon)
+			w.Active = false
+			w.TargetID = 0
+		}
+	}
+	if keep != "follow" {
+		if _, ok := world.GetComponent(playerID, domain.FollowOrder{}); ok {
+			world.RemoveComponent(playerID, domain.FollowOrder{})
+		}
+	}
+	// A pending battle-join is always cancelled by any other order (it carries its own
+	// FollowOrder for the approach; "join" itself keeps both via a separate path).
+	if keep != "join" {
+		if _, ok := world.GetComponent(playerID, domain.PendingJoin{}); ok {
+			world.RemoveComponent(playerID, domain.PendingJoin{})
+		}
+	}
+}
+
+// findCombatMarker locates the battle marker for a combat instance, returning its entity
+// id plus the attacker/defender fleet ids (for side selection).
+func findCombatMarker(world *ecs.World, instanceID uint32) (markerID, attackerID, defenderID domain.EntityID, found bool) {
+	for _, id := range world.Query(ecs.BuildMask(domain.CombatMarker{})) {
+		if cmVal, ok := world.GetComponent(id, domain.CombatMarker{}); ok {
+			cm := cmVal.(*domain.CombatMarker)
+			if cm.CombatInstanceID == instanceID {
+				return id, cm.AttackerID, cm.DefenderID, true
+			}
+		}
+	}
+	return 0, 0, 0, false
+}
+
+// entityDist returns the distance between two entities (and false if either lacks a Transform).
+func entityDist(world *ecs.World, a, b domain.EntityID) (float32, bool) {
+	av, ok1 := world.GetComponent(a, domain.Transform{})
+	bv, ok2 := world.GetComponent(b, domain.Transform{})
+	if !ok1 || !ok2 {
+		return 0, false
+	}
+	at := av.(*domain.Transform)
+	bt := bv.(*domain.Transform)
+	dx := at.X - bt.X
+	dy := at.Y - bt.Y
+	return float32(math.Sqrt(float64(dx*dx + dy*dy))), true
+}
+
+func entityFactionID(world *ecs.World, id domain.EntityID) uint32 {
+	if fVal, ok := world.GetComponent(id, domain.FactionMember{}); ok {
+		return fVal.(*domain.FactionMember).FactionID
+	}
+	return 0
+}
+
+func factionName(fid uint32) string {
+	switch fid {
+	case 1:
+		return "Пираты"
+	case 2:
+		return "Патруль"
+	default:
+		return "Независимые"
+	}
+}
+
+// entityDisplayName mirrors the snapshot naming so hail panels match what the client sees.
+func entityDisplayName(world *ecs.World, id domain.EntityID) string {
+	if pVal, ok := world.GetComponent(id, domain.PlayerData{}); ok {
+		return pVal.(*domain.PlayerData).Name
+	}
+	eType, _ := world.GetEntityType(id)
+	if eType == domain.EntityNPC {
+		if cfgVal, ok := world.GetComponent(id, domain.ShipConfig{}); ok {
+			switch cfgVal.(*domain.ShipConfig).ShipType {
+			case "miner":
+				return "NPC Шахтёр"
+			case "pirate":
+				return "NPC Пират"
+			case "patrol":
+				return "NPC Патруль"
+			}
+		}
+		return "NPC"
+	}
+	return eType.String()
+}
+
+// canAttack validates a player-initiated attack on an NPC (used both for the action
+// gate and the C_ATTACK_NPC_REQUEST handler).
+func canAttack(world *ecs.World, attacker, target domain.EntityID) (bool, string) {
+	if target == attacker {
+		return false, "cannot attack yourself"
+	}
+	eType, exists := world.GetEntityType(target)
+	if !exists {
+		return false, "target does not exist"
+	}
+	if eType != domain.EntityNPC && eType != domain.EntityPlayer {
+		return false, "can only attack ships"
+	}
+	if csVal, ok := world.GetComponent(attacker, domain.CombatState{}); ok && csVal.(*domain.CombatState).InCombat {
+		return false, "already in combat"
+	}
+	if csVal, ok := world.GetComponent(target, domain.CombatState{}); ok && csVal.(*domain.CombatState).InCombat {
+		return false, "target already in combat"
+	}
+	// No distance gate: out of range we fly toward the target and engage on arrival.
+	return true, ""
+}
+
+// availableActions is the single source of truth for "what can I do with this object".
+// The client renders the returned list verbatim; the server still validates each action
+// when it is actually executed.
+func availableActions(world *ecs.World, playerID, targetID domain.EntityID) []*protocol.ActionDef {
+	actions := []*protocol.ActionDef{}
+	eType, exists := world.GetEntityType(targetID)
+	if !exists || targetID == playerID {
+		return actions
+	}
+
+	switch eType {
+	case domain.EntityAsteroid:
+		mine := &protocol.ActionDef{Id: "mine", Label: "Mine", Enabled: true}
+		if _, ok := world.GetComponent(playerID, domain.MiningLaser{}); !ok {
+			mine.Enabled = false
+			mine.Hint = "No mining laser"
+		} else if cVal, ok := world.GetComponent(playerID, domain.Cargo{}); ok {
+			cargo := cVal.(*domain.Cargo)
+			if cargo.LoadVolume() >= float32(cargo.Capacity) {
+				mine.Enabled = false
+				mine.Hint = "Cargo hold full"
+			}
+		}
+		actions = append(actions, mine)
+
+	case domain.EntityNPC, domain.EntityPlayer:
+		atk := &protocol.ActionDef{Id: "attack", Label: "Attack", Enabled: true}
+		if ok, reason := canAttack(world, playerID, targetID); !ok {
+			atk.Enabled = false
+			atk.Hint = reason
+		}
+		actions = append(actions, atk)
+		actions = append(actions, &protocol.ActionDef{Id: "escort", Label: "Escort", Enabled: true})
+		actions = append(actions, &protocol.ActionDef{Id: "talk", Label: "Hail", Enabled: true})
+
+	case domain.EntityLootContainer:
+		actions = append(actions, &protocol.ActionDef{Id: "scan", Label: "Scan", Enabled: true})
+		loot := &protocol.ActionDef{Id: "loot", Label: "Collect", Enabled: true}
+		if cVal, ok := world.GetComponent(playerID, domain.Cargo{}); ok {
+			cargo := cVal.(*domain.Cargo)
+			if cargo.LoadVolume() >= float32(cargo.Capacity) {
+				loot.Enabled = false
+				loot.Hint = "Cargo hold full"
+			}
+		}
+		actions = append(actions, loot)
+
+	case domain.EntityStation:
+		actions = append(actions,
+			&protocol.ActionDef{Id: "buy", Label: "Buy", Enabled: true},
+			&protocol.ActionDef{Id: "sell", Label: "Sell", Enabled: true},
+			&protocol.ActionDef{Id: "refine", Label: "Refine", Enabled: true},
+			&protocol.ActionDef{Id: "build_ship", Label: "Build Ship", Enabled: true},
+		)
+
+	case domain.EntitySpaceBase:
+		upg := &protocol.ActionDef{Id: "upgrade_base", Label: "Upgrade", Enabled: true}
+		if bVal, ok := world.GetComponent(targetID, domain.SpaceBase{}); ok {
+			if bVal.(*domain.SpaceBase).OwnerID != uint64(playerID) {
+				upg.Enabled = false
+				upg.Hint = "Not your base"
+			}
+		}
+		actions = append(actions, upg)
+
+	case domain.EntityPlanet:
+		dev := &protocol.ActionDef{Id: "develop_planet", Label: "Develop", Enabled: true}
+		if pVal, ok := world.GetComponent(targetID, domain.Planet{}); ok {
+			planet := pVal.(*domain.Planet)
+			if planet.OwnerID != 0 && planet.OwnerID != uint64(playerID) {
+				dev.Enabled = false
+				dev.Hint = "Planet is claimed"
+			}
+		}
+		if dev.Enabled {
+			if d, ok := entityDist(world, playerID, targetID); ok && d > 300 {
+				dev.Enabled = false
+				dev.Hint = "Too far (need ≤300)"
+			}
+		}
+		actions = append(actions, dev)
+
+	case domain.EntityCombatMarker:
+		actions = append(actions,
+			&protocol.ActionDef{Id: "join_attackers", Label: "Join Attackers", Enabled: true},
+			&protocol.ActionDef{Id: "join_defenders", Label: "Join Defenders", Enabled: true},
+		)
+	}
+
+	return actions
+}
+
+func sendTargetActions(world *ecs.World, bus messaging.MessageBus, playerID, targetID domain.EntityID) {
+	msg := &protocol.TargetActions{
+		TargetId: uint64(targetID),
+		Actions:  availableActions(world, playerID, targetID),
+	}
+	payload, _ := proto.Marshal(msg)
+	packet := &protocol.Packet{Type: protocol.PacketType_S_TARGET_ACTIONS, Payload: payload}
+	packetData, _ := proto.Marshal(packet)
+	_ = bus.Publish(fmt.Sprintf("player.%d.response", playerID), packetData)
+}
+
+func sendHailResponse(world *ecs.World, bus messaging.MessageBus, playerID, targetID domain.EntityID) {
+	if _, exists := world.GetEntityType(targetID); !exists {
+		return
+	}
+	disp := "neutral"
+	var lines []string
+	switch {
+	case systems.AreHostile(world, playerID, targetID):
+		disp = "hostile"
+		lines = []string{"Уходи с моей дороги, пилот.", "Нам не о чем говорить."}
+	case entityFactionID(world, playerID) != 0 && entityFactionID(world, playerID) == entityFactionID(world, targetID):
+		disp = "friendly"
+		lines = []string{"Рад встрече, союзник.", "Держись рядом, в этом секторе неспокойно."}
+	default:
+		lines = []string{"...на канале связи тишина.", "Чего тебе надо?"}
+	}
+	msg := &protocol.HailResponse{
+		TargetId:    uint64(targetID),
+		Name:        entityDisplayName(world, targetID),
+		Faction:     factionName(entityFactionID(world, targetID)),
+		Disposition: disp,
+		Lines:       lines,
+	}
+	payload, _ := proto.Marshal(msg)
+	packet := &protocol.Packet{Type: protocol.PacketType_S_HAIL_RESPONSE, Payload: payload}
+	packetData, _ := proto.Marshal(packet)
+	_ = bus.Publish(fmt.Sprintf("player.%d.response", playerID), packetData)
+}
+
+// sendContainerContents reveals a loot container's cargo + credits to the player (the
+// "scan" action). Read-only: it does not transfer anything.
+func sendContainerContents(world *ecs.World, bus messaging.MessageBus, playerID, targetID domain.EntityID) {
+	eType, exists := world.GetEntityType(targetID)
+	if !exists || eType != domain.EntityLootContainer {
+		return
+	}
+	msg := &protocol.ContainerContents{
+		TargetId: uint64(targetID),
+		Name:     "Loot Container",
+	}
+	if lVal, ok := world.GetComponent(targetID, domain.Loot{}); ok {
+		msg.Credits = lVal.(*domain.Loot).Credits
+	}
+	if cVal, ok := world.GetComponent(targetID, domain.Cargo{}); ok {
+		cargo := cVal.(*domain.Cargo)
+		// Combat drops append items individually, so the same DefinitionID can appear in
+		// several entries. Aggregate by DefinitionID so the scan shows one row per item
+		// with the correct total quantity (matching what the inventory will show).
+		order := make([]uint32, 0, len(cargo.Items))
+		totals := make(map[uint32]int32, len(cargo.Items))
+		for _, item := range cargo.Items {
+			if item.Quantity <= 0 {
+				continue
+			}
+			if _, seen := totals[item.DefinitionID]; !seen {
+				order = append(order, item.DefinitionID)
+			}
+			totals[item.DefinitionID] += item.Quantity
+		}
+		for _, defID := range order {
+			name := string(domain.IDToResource[defID])
+			if name == "" {
+				name = fmt.Sprintf("Item #%d", defID)
+			}
+			msg.Items = append(msg.Items, &protocol.ItemInstanceProto{
+				DefinitionId: defID,
+				Quantity:     totals[defID],
+				Name:         name,
+				Volume:       domain.VolumeForID(defID),
+				Category:     domain.CategoryForID(defID),
+				State:        "normal",
+			})
+		}
+	}
+	payload, _ := proto.Marshal(msg)
+	packet := &protocol.Packet{Type: protocol.PacketType_S_CONTAINER_CONTENTS, Payload: payload}
 	packetData, _ := proto.Marshal(packet)
 	_ = bus.Publish(fmt.Sprintf("player.%d.response", playerID), packetData)
 }

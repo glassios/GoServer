@@ -182,11 +182,8 @@ func BuildEntitySnapshot(world *ecs.World, id domain.EntityID) *protocol.EntityS
 		snap.QtyMiningLaser = cargo.GetResourceTypeQuantity("Mining Laser")
 
 		snap.CargoCapacity = cargo.Capacity
-		var load int32
-		for _, item := range cargo.Items {
-			load += item.Quantity
-		}
-		snap.CargoLoad = load
+		// Load is measured in volume units (rounded up so a near-full hold reads full).
+		snap.CargoLoad = int32(cargo.LoadVolume() + 0.999)
 	}
 
 	// Loot Credits (overrides standard PlayerData credits if present)

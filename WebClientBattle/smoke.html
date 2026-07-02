@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Order New Dawn — renderer smoke test</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #06090e; overflow: hidden; font-family: 'JetBrains Mono', monospace; }
+  #c { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+  #hud { position: fixed; left: 12px; top: 10px; color: #ff9b5c; font-size: 12px; letter-spacing: 1px;
+         text-shadow: 0 0 6px rgba(244,123,62,.5); pointer-events: none; }
+  #err { position: fixed; left: 12px; bottom: 10px; color: #e0584f; font-size: 12px; }
+</style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div id="hud">ORDER NEW DAWN — battle-gl.js smoke test<br /><span id="stat">booting…</span></div>
+  <div id="err"></div>
+  <script src="battle-gl.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    const canvas = document.getElementById('c');
+    const stat = document.getElementById('stat');
+    const errEl = document.getElementById('err');
+
+    const r = window.BattleGL && window.BattleGL.create(canvas);
+    if (!r) { errEl.textContent = 'WebGL unavailable — BattleGL.create returned null'; return; }
+    r.resize();
+    window.addEventListener('resize', () => r.resize());
+
+    // Two ships orbiting the origin in the prototype's normalized world (WORLD=3, coords ~0..3).
+    const mkShip = (side, hullTex, radius) => ({
+      x: 1.5, y: 1.5, angle: 0, radius, side, dead: false,
+      hullTex, hullAspect: 0.44, shieldDeploy: 1, shieldArc: 0.5, shieldA: 0,
+      heat: [], sHits: [], beam: 0,
+    });
+    const ships = [ mkShip('player', 'ship', 34), mkShip('enemy', 'dest', 46) ];
+
+    const B = {
+      ships, projs: [], parts: [], warps: [], asteroids: [
+        { x: 0.7, y: 0.6, rot: 0.3, scale: 0.5, par: 0.82 },
+        { x: 2.4, y: 2.1, rot: 1.1, scale: 0.7, par: 0.82 },
+      ],
+      camX: 1.5, camY: 1.5, zoom: 0.4, t: 0, world: 3,
+    };
+
+    let frame = 0;
+    function loop() {
+      requestAnimationFrame(loop);
+      frame++; B.t += 0.016;
+      // orbit the two ships around the arena centre so we can see movement + lighting/rotation
+      const a = B.t * 0.6;
+      B.ships[0].x = 1.5 + Math.cos(a) * 0.8;   B.ships[0].y = 1.5 + Math.sin(a) * 0.8;
+      B.ships[0].angle = a + Math.PI / 2;
+      B.ships[1].x = 1.5 - Math.cos(a) * 0.8;   B.ships[1].y = 1.5 - Math.sin(a) * 0.8;
+      B.ships[1].angle = a - Math.PI / 2;
+      // point shields toward each other
+      B.ships[0].shieldA = Math.atan2(B.ships[1].y - B.ships[0].y, B.ships[1].x - B.ships[0].x);
+      B.ships[1].shieldA = Math.atan2(B.ships[0].y - B.ships[1].y, B.ships[0].x - B.ships[1].x);
+      r.render(B);
+      if (frame % 30 === 0) {
+        stat.textContent = r.ready ? ('rendering — textures ready, t=' + B.t.toFixed(1)) : 'loading textures…';
+      }
+    }
+    loop();
+
+    // basic wheel zoom so the tester can confirm camera math
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const f = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+      B.zoom = Math.max(0.05, Math.min(9, B.zoom * f));
+    }, { passive: false });
+  })();
+  </script>
+</body>
+</html>

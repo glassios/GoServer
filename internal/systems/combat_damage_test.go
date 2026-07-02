@@ -24,7 +24,7 @@ func TestApplyDamage_KineticHitsShieldAndRaisesFlux(t *testing.T) {
 	newDamageTarget(world, id, false)
 
 	// Kinetic ×2 vs shields: 40 dmg → 80 shield damage, 80 flux, hull/armor untouched.
-	killed := cs.applyDamage(world, id, 40, domain.DamageKinetic)
+	killed := cs.applyDamage(world, id, 0, 0, 40, domain.DamageKinetic, "")
 	if killed {
 		t.Fatal("should not kill through full shield")
 	}
@@ -51,7 +51,7 @@ func TestApplyDamage_ShieldDownExplosiveChewsArmorThenHull(t *testing.T) {
 
 	// Explosive ×2 vs armor: 30 dmg → 60 armor damage. Armor=50 breaks (absorbs 50/60),
 	// remaining 30*(1-0.833)=5 → hull -5 → 95.
-	cs.applyDamage(world, id, 30, domain.DamageExplosive)
+	cs.applyDamage(world, id, 0, 0, 30, domain.DamageExplosive, "")
 	ar := mustGet[*domain.ArmorGrid](t, world, id)
 	if ar.Current != 0 {
 		t.Errorf("armor should be depleted, got %v", ar.Current)
@@ -74,10 +74,86 @@ func TestApplyDamage_FluxOverloadDropsShield(t *testing.T) {
 	world.AddComponent(id, &domain.CombatFx{})
 
 	// Energy ×1 vs shields: 120 dmg → 120 flux absorbed, exceeds capacity 100 → overload.
-	cs.applyDamage(world, id, 120, domain.DamageEnergy)
+	cs.applyDamage(world, id, 0, 0, 120, domain.DamageEnergy, "")
 	fl := mustGet[*domain.FluxState](t, world, id)
 	if !fl.Overloaded {
 		t.Errorf("expected overload when absorbed flux exceeds capacity, flux=%v", fl.Current)
+	}
+}
+
+func TestApplyDamage_FrontShieldBlocksFrontBypassesRear(t *testing.T) {
+	world := ecs.NewWorld()
+	cs := NewCombatSystem(nil)
+	id := domain.EntityID(4)
+	world.RegisterEntityWithID(id, domain.EntityNPC)
+	world.AddComponent(id, &domain.Transform{X: 0, Y: 0, Rotation: 0}) // facing +X
+	world.AddComponent(id, &domain.Health{Current: 100, Max: 100})
+	world.AddComponent(id, &domain.Shield{Current: 100, Max: 100, Efficiency: 1.0, Type: "front", Arc: 90})
+	world.AddComponent(id, &domain.ArmorGrid{Current: 50, Max: 50})
+	world.AddComponent(id, &domain.FluxState{Current: 0, Capacity: 200})
+	world.AddComponent(id, &domain.CombatFx{})
+	world.AddComponent(id, &domain.Weapon{}) // no target → shield faces hull forward (Rotation=0)
+
+	// Frontal hit (attacker at +X, within the 90° arc): kinetic ×2 → 20 shield damage, absorbed.
+	cs.applyDamage(world, id, 100, 0, 10, domain.DamageKinetic, "")
+	sh := mustGet[*domain.Shield](t, world, id)
+	ar := mustGet[*domain.ArmorGrid](t, world, id)
+	if sh.Current != 80 {
+		t.Errorf("frontal hit should hit shield: shield=%d want 80", sh.Current)
+	}
+	if ar.Current != 50 {
+		t.Errorf("frontal hit should not reach armor: armor=%v want 50", ar.Current)
+	}
+
+	// Rear hit (attacker at -X, outside the arc): bypasses shield → kinetic ×0.5 on armor = 5.
+	cs.applyDamage(world, id, -100, 0, 10, domain.DamageKinetic, "")
+	sh = mustGet[*domain.Shield](t, world, id)
+	ar = mustGet[*domain.ArmorGrid](t, world, id)
+	if sh.Current != 80 {
+		t.Errorf("rear hit should not touch shield: shield=%d want 80", sh.Current)
+	}
+	if ar.Current != 45 {
+		t.Errorf("rear hit should chew armor: armor=%v want 45", ar.Current)
+	}
+}
+
+func TestOverload_FixedDurationThenReset(t *testing.T) {
+	world := ecs.NewWorld()
+	cs := NewCombatSystem(nil)
+	id := domain.EntityID(5)
+	world.RegisterEntityWithID(id, domain.EntityNPC)
+	world.AddComponent(id, &domain.Shield{Current: 100, Max: 100, Efficiency: 1.0, Type: "omni"})
+	world.AddComponent(id, &domain.FluxState{Current: 100, Capacity: 100, DissipationRate: 10})
+
+	fl := mustGet[*domain.FluxState](t, world, id)
+	triggerOverload(fl)
+	if !fl.Overloaded || fl.OverloadTimer <= 0 {
+		t.Fatalf("triggerOverload should set Overloaded + a positive timer, got %+v", *fl)
+	}
+	dur := fl.OverloadTimer
+
+	// Halfway through: still overloaded, shield forced down.
+	steps := int(dur/0.05) + 1
+	for i := 0; i < steps/2; i++ {
+		cs.upkeep(world, id, 0.05)
+	}
+	if !fl.Overloaded {
+		t.Errorf("should still be overloaded at half the duration")
+	}
+	sh := mustGet[*domain.Shield](t, world, id)
+	if !sh.Down {
+		t.Errorf("shield should be down during overload")
+	}
+
+	// Run out the rest: overload clears and flux resets to 0.
+	for i := 0; i < steps; i++ {
+		cs.upkeep(world, id, 0.05)
+	}
+	if fl.Overloaded {
+		t.Errorf("overload should have ended after its fixed duration")
+	}
+	if fl.Current != 0 {
+		t.Errorf("flux should reset to 0 after overload, got %v", fl.Current)
 	}
 }
 

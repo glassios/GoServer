@@ -1,0 +1,134 @@
+{
+  "schemaVersion": 1,
+  "id": "Fighter_Alpha_v0",
+  "name": "Fighter Alpha",
+  "hull": {
+    "size": [
+      6,
+      2.5
+    ],
+    "texture": "/m1.png",
+    "normalMap": "/m1n.png",
+    "roughness": 0.4,
+    "metalness": 0.6
+  },
+  "engines": [
+    {
+      "id": "left-outer",
+      "engineAsset": "prefubs/Engines/center_Green_Thruster_v0.json",
+      "mountOverride": {
+        "side": "left",
+        "lateralOffset": -0.645
+      },
+      "inputBindings": {
+        "thrust": [
+          "w"
+        ],
+        "reverse": [
+          "s"
+        ],
+        "turnAssistLeft": [
+          "d"
+        ]
+      }
+    },
+    {
+      "id": "left-inner",
+      "engineAsset": "prefubs/Engines/default-ion.json",
+      "mountOverride": {
+        "side": "left",
+        "lateralOffset": -0.38
+      },
+      "inputBindings": {
+        "thrust": [
+          "w"
+        ],
+        "reverse": [
+          "s"
+        ],
+        "turnAssistLeft": [
+          "d"
+        ]
+      }
+    },
+    {
+      "id": "right-inner",
+      "engineAsset": "prefubs/Engines/default-ion.json",
+      "mountOverride": {
+        "side": "right",
+        "lateralOffset": 0.38
+      },
+      "inputBindings": {
+        "thrust": [
+          "w"
+        ],
+        "reverse": [
+          "s"
+        ],
+        "turnAssistRight": [
+          "a"
+        ]
+      }
+    },
+    {
+      "id": "right-outer",
+      "engineAsset": "prefubs/Engines/default-ion.json",
+      "mountOverride": {
+        "side": "right",
+        "lateralOffset": 0.645
+      },
+      "inputBindings": {
+        "thrust": [
+          "w"
+        ],
+        "reverse": [
+          "s"
+        ],
+        "turnAssistRight": [
+          "a"
+        ]
+      }
+    }
+  ],
+  "weapons": [
+    {
+      "id": "main-beam",
+      "turretAsset": "prefubs/Turrets/default-beam.json",
+      "scale": 0.45,
+      "mount": {
+        "localPosition": {
+          "x": 1.7,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": 0
+      }
+    },
+    {
+      "id": "blaster-left",
+      "turretAsset": "prefubs/Turrets/default-blaster.json",
+      "scale": 0.4,
+      "mount": {
+        "localPosition": {
+          "x": 1.5,
+          "y": 0.6,
+          "z": 0
+        },
+        "rotation": 0
+      }
+    },
+    {
+      "id": "blaster-right",
+      "turretAsset": "prefubs/Turrets/default-blaster.json",
+      "scale": 0.4,
+      "mount": {
+        "localPosition": {
+          "x": 1.5,
+          "y": -0.6,
+          "z": 0
+        },
+        "rotation": 0
+      }
+    }
+  ]
+}

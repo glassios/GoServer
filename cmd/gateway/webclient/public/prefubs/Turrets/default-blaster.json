@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "id": "Blaster_Turret_v0",
+  "name": "Blaster Turret",
+  "kind": "blaster",
+  "visual": {
+    "size": [1.2, 1.2],
+    "texture": "/turret.png",
+    "normalMap": "/turret_n.png",
+    "roughness": 0.4,
+    "metalness": 0.6
+  },
+  "pivot": { "x": 0, "y": 0, "z": 0 },
+  "rotationOrigin": { "x": 0, "y": 0, "z": 0 },
+  "rotation": {
+    "minAngle": -1.5707963267948966,
+    "maxAngle": 1.5707963267948966,
+    "turnSpeed": 2.5
+  },
+  "blaster": {
+    "muzzles": [
+      {
+        "id": "muzzle-left",
+        "localPosition": { "x": 1.95, "y": 0.56, "z": 0 },
+        "lightPosition": { "x": 1.8, "y": 0.6, "z": 0.5 },
+        "fireInterval": 0.08,
+        "boltSpeed": 23.3,
+        "boltLifetime": 1,
+        "maxBolts": 100,
+        "boltSize": [0.2, 0.08],
+        "colors": {
+          "core": { "r": 0.6, "g": 1, "b": 0.6 },
+          "glow": { "r": 0.1, "g": 1, "b": 0.2 }
+        },
+        "shader": {
+          "alphaPowX": 3,
+          "alphaPowY": 2,
+          "glowMix": 1.5,
+          "colorMultiply": 2.5
+        },
+        "pointLights": {
+          "color": "#66ff66",
+          "flashIntensity": 15,
+          "decayLerp": 0.4,
+          "distance": 1,
+          "decay": 2
+        }
+      },
+      {
+        "id": "muzzle-right",
+        "localPosition": { "x": 1.95, "y": -0.56, "z": 0 },
+        "lightPosition": { "x": 1.8, "y": -0.6, "z": 0.5 },
+        "fireInterval": 0.08,
+        "boltSpeed": 23.3,
+        "boltLifetime": 1,
+        "maxBolts": 100,
+        "boltSize": [0.2, 0.08],
+        "colors": {
+          "core": { "r": 0.6, "g": 1, "b": 0.6 },
+          "glow": { "r": 0.1, "g": 1, "b": 0.2 }
+        },
+        "shader": {
+          "alphaPowX": 3,
+          "alphaPowY": 2,
+          "glowMix": 1.5,
+          "colorMultiply": 2.5
+        },
+        "pointLights": {
+          "color": "#66ff66",
+          "flashIntensity": 15,
+          "decayLerp": 0.4,
+          "distance": 1,
+          "decay": 2
+        }
+      }
+    ]
+  }
+}

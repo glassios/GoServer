@@ -98,12 +98,12 @@ func (s *CleanupSystem) Update(world *ecs.World, dt float64) {
 				world.AddComponent(lootEntity, &domain.Transform{X: posX, Y: posY})
 				world.AddComponent(lootEntity, &domain.Loot{Credits: credits})
 
-				if len(items) > 0 {
-					world.AddComponent(lootEntity, &domain.Cargo{
-						Capacity: 999999,
-						Items:    items,
-					})
-				}
+				// Cargo is always attached (even for credit-only drops) — LootSystem's
+				// query requires it, otherwise the container is never auto-picked-up.
+				world.AddComponent(lootEntity, &domain.Cargo{
+					Capacity: 999999,
+					Items:    items,
+				})
 
 				if s.grid != nil {
 					s.grid.Insert(lootEntity, posX, posY)

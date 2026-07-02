@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "id": "default-ion v2",
+  "name": "Ion Thruster v2",
+  "mount": {
+    "side": "center",
+    "localPosition": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "lateralOffset": 0,
+    "exhaustAngle": 0
+  },
+  "flame": {
+    "canvasSize": 64,
+    "stops": [
+      {
+        "position": 0,
+        "rgba": [
+          255,
+          255,
+          255,
+          1
+        ]
+      },
+      {
+        "position": 0.2,
+        "rgba": [
+          100,
+          200,
+          255,
+          0.8
+        ]
+      },
+      {
+        "position": 0.5,
+        "rgba": [
+          0,
+          100,
+          255,
+          0.3
+        ]
+      },
+      {
+        "position": 1,
+        "rgba": [
+          0,
+          50,
+          255,
+          0
+        ]
+      }
+    ]
+  },
+  "particle": {
+    "maxCount": 500,
+    "quadSize": 1.01,
+    "opacity": 0.9,
+    "backOffset": 3,
+    "zOffset": -0.5,
+    "positionSpread": 0.05
+  },
+  "modes": {
+    "off": {
+      "emitRate": 0,
+      "poolWeight": 0,
+      "lifeMin": 0.05,
+      "lifeMax": 0.13,
+      "speedBase": 0,
+      "speedVar": 0,
+      "lateralVelocity": 0
+    },
+    "idle": {
+      "emitRate": 75,
+      "poolWeight": 1,
+      "lifeMin": 0.0125,
+      "lifeMax": 0.0325,
+      "speedBase": 0.25,
+      "speedVar": 0.25,
+      "lateralVelocity": 0.1
+    },
+    "thrust": {
+      "emitRate": 300,
+      "poolWeight": 4,
+      "lifeMin": 0.34,
+      "lifeMax": 0.39,
+      "speedBase": 6.19,
+      "speedVar": 4.18,
+      "lateralVelocity": 0.4
+    },
+    "reverse": {
+      "emitRate": 150,
+      "poolWeight": 2,
+      "lifeMin": 0.04,
+      "lifeMax": 0.1,
+      "speedBase": 4,
+      "speedVar": 2,
+      "lateralVelocity": 0.3
+    }
+  },
+  "pointLight": {
+    "enabled": true,
+    "color": "#00e5ff",
+    "position": {
+      "x": -2.6,
+      "y": 0.5,
+      "z": 0.5
+    },
+    "distance": 10,
+    "decay": 2,
+    "intensityMin": 15,
+    "intensityMax": 35,
+    "rampUp": 0.4,
+    "rampDown": 0.2
+  }
+}

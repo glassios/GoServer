@@ -65,6 +65,28 @@ enum PacketType {
 
   // Phase 5 planets
   C_DEVELOP_PLANET = 39;
+
+  // Inventory: jettison cargo into space as a loot container
+  C_JETTISON_INPUT = 40;
+
+  // Context actions on a selected object (server-driven action list)
+  C_QUERY_ACTIONS = 41;
+  S_TARGET_ACTIONS = 42;
+  C_ATTACK_NPC_REQUEST = 43;
+  C_SET_FOLLOW = 44;
+  C_HAIL = 45;
+  S_HAIL_RESPONSE = 46;
+
+  // Scan a loot container to reveal its contents
+  C_SCAN_CONTAINER = 47;
+  S_CONTAINER_CONTENTS = 48;
+
+  // Pre-battle fleet formation (rank/column battle line)
+  C_SET_FLEET_FORMATION = 49;
+
+  // Colony overview (owned space bases + developed planets)
+  C_GET_COLONIES = 50;
+  S_COLONIES_STATUS = 51;
 }
 
 message Packet {
@@ -178,11 +200,50 @@ message EntitySnapshot {
   string assist_type = 49;       // "repair" | "support" (for the assist beam color)
   // Phase 5 space bases
   int32 base_level = 50;         // level of a SpaceBase entity
+  // Directional shields (combat): arc coverage in degrees (>=360 = omni/full bubble) and the
+  // world-space heading the shield is held toward (radians). For client shield-arc rendering.
+  float shield_arc = 51;
+  float shield_facing = 52;
+  // Missile subsystem hits (Phase B4): true while this ship's engines/weapons are knocked out.
+  bool engine_hit = 53;
+  bool weapon_hit = 54;
+  // Overload lockout remaining (Phase D): seconds left on a fixed-duration overload (0 = not
+  // overloaded). Lets the client show an overload countdown rather than just a boolean.
+  float overload_timer = 55;
+}
+
+// FireEvent (Phase B3): a weapon discharged a traveling shot this tick. Damage is applied
+// authoritatively/instantly by the server; this is a thin-channel cosmetic hint so the client can
+// draw the bolt flying from (origin) toward (target). Streamed inside the tick snapshot.
+message FireEvent {
+  uint64 attacker_id = 1;
+  uint64 target_id = 2;
+  float origin_x = 3;
+  float origin_y = 4;
+  float target_x = 5;
+  float target_y = 6;
+  float speed = 7;         // world units/sec (client flight speed)
+  string damage_type = 8;  // KINETIC | EXPLOSIVE | ENERGY | FRAGMENTATION (bolt tint)
+  string weapon_class = 9; // "projectile" (beam/missile later)
+}
+
+// MissileState (Phase B4): authoritative position of a live flying missile in a combat instance.
+// Thin channel — a handful of fields per missile, streamed each tick so the client can render true
+// missile positions and honest interception (a missile that vanishes from the list was shot down or
+// hit). Separate from EntitySnapshot so missiles don't go through the ship-rendering path.
+message MissileState {
+  uint64 id = 1;
+  float x = 2;
+  float y = 3;
+  float rotation = 4;
+  string damage_type = 5;
 }
 
 message WorldSnapshot {
   uint64 tick = 1;
   repeated EntitySnapshot entities = 2;
+  repeated FireEvent fire_events = 3; // weapon discharges this tick (combat instances only)
+  repeated MissileState missiles = 4; // live flying missiles this tick (combat instances only)
 }
 
 message DeltaSnapshot {
@@ -301,10 +362,44 @@ message FleetStatusShip {
   float preview_max_speed = 19;
   float preview_max_flux = 20;
   float preview_flux_dissipation = 21;
+  // Pre-battle formation slot (client renders the battle-line grid from these).
+  int32 formation_rank = 22;
+  int32 formation_col = 23;
 }
 
 message FleetStatus {
   repeated FleetStatusShip ships = 1;
+}
+
+// Client sets the pre-battle fleet formation (battle-line rank/column per ship).
+// The server reorders the fleet by (rank, col) so the front-left ship leads (flagship),
+// and spawns each ship at its rank/column offset when a combat instance unpacks the fleet.
+message FleetFormationSlot {
+  uint32 ship_id = 1;
+  int32 rank = 2; // 0 = vanguard (front), higher = further back
+  int32 col = 3;  // 0..5 lateral column
+}
+
+message SetFleetFormation {
+  repeated FleetFormationSlot slots = 1;
+}
+
+// One player-owned colony (space base or developed planet) for the colony overview screen.
+message ColonyEntry {
+  uint64 entity_id = 1;
+  string kind = 2;        // "base" | "planet"
+  int32 level = 3;        // base level / planet development level
+  float x = 4;
+  float y = 5;
+  int32 health = 6;       // bases only (0 for planets)
+  int32 max_health = 7;
+  int64 income = 8;       // passive yield per production cycle
+  string income_unit = 9; // "IronPlates" | "cr"
+  uint32 system_id = 10;
+}
+
+message ColoniesStatus {
+  repeated ColonyEntry colonies = 1;
 }
 
 // Phase 2 hangar catalog (available hulls / weapons / hullmods).
@@ -460,6 +555,7 @@ message VaultStatus {
 message JoinCombatRequest {
   uint32 combat_instance_id = 1;
   uint64 align_with_fleet_id = 2; // 0 for FFA (free for all)
+  string side = 3;                // "attacker" | "defender" | "" — server resolves the fleet id from the marker
 }
 
 // Phase 3: data-driven crafting.
@@ -534,4 +630,64 @@ message UpgradeBaseRequest {
 
 message DevelopPlanetRequest {
   uint64 planet_id = 1;
+}
+
+// Eject a quantity of a cargo resource into space as a loot container.
+message JettisonInput {
+  string resource = 1;
+  int32 amount = 2;
+}
+
+// Context actions: client asks "what can I do with this object", server replies
+// with a data-driven list (single source of truth for action availability).
+message QueryActionsRequest {
+  uint64 target_id = 1;
+}
+
+message ActionDef {
+  string id = 1;      // verb: mine | attack | escort | talk | upgrade_base | develop_planet | join_combat | buy | sell | refine | build_ship | dock
+  string label = 2;   // display label
+  bool enabled = 3;   // greyed out when false
+  string hint = 4;    // tooltip / reason it is disabled
+}
+
+message TargetActions {
+  uint64 target_id = 1;
+  repeated ActionDef actions = 2;
+}
+
+// Player-initiated combat: spin up an instance against this NPC.
+message AttackNpcRequest {
+  uint64 target_id = 1;
+}
+
+// Follow/escort order: the player's ship follows the target at a standoff.
+// target_id = 0 cancels the current follow order.
+message SetFollowRequest {
+  uint64 target_id = 1;
+}
+
+// Minimal hail/talk stub.
+message HailRequest {
+  uint64 target_id = 1;
+}
+
+message HailResponse {
+  uint64 target_id = 1;
+  string name = 2;
+  string faction = 3;
+  string disposition = 4; // friendly | neutral | hostile
+  repeated string lines = 5;
+}
+
+// Scan a loot container to reveal its contents before collecting.
+message ScanContainerRequest {
+  uint64 target_id = 1;
+}
+
+message ContainerContents {
+  uint64 target_id = 1;
+  string name = 2;
+  int64 credits = 3;
+  repeated ItemInstanceProto items = 4;
 }

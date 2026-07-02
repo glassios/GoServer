@@ -23,6 +23,7 @@ type CombatInstance struct {
 	World            *ecs.World
 	Grid             *spatial.HashGrid
 	Systems          []ecs.System
+	CombatSys        *CombatSystem // typed ref into Systems, for draining this tick's fire events
 	OriginalSystemID uint32
 	Participants     []domain.EntityID
 	Teams            map[domain.EntityID]uint32 // FleetID -> TeamID
@@ -109,9 +110,12 @@ func (m *InstanceManager) CreateCombatInstance(mainWorld *ecs.World, attackerID,
 
 	// Инициализируем локальные системы боевого мира с увеличенной в 5 раз ареной
 	moveSys := NewMovementSystem(6000, 6000) // Ограниченный размер арены
+	moveSys.SetGrid(instGrid)                // keep the arena's spatial index live
 	visSys := NewVisibilitySystem(instGrid)
 	aiSys := NewAISystem(3000.0, 0, 6000, 6000) // maxNPCs=0, только обновление поведения существующих
+	aiSys.SetGrid(instGrid)
 	combatSys := NewCombatSystem(nil)
+	missileSys := NewMissileSystem(combatSys, int64(instID)) // seeded per-instance for deterministic PD
 	lootSys := NewLootSystem(instGrid)
 	cleanupSys := NewCleanupSystem(instGrid)
 
@@ -120,6 +124,7 @@ func (m *InstanceManager) CreateCombatInstance(mainWorld *ecs.World, attackerID,
 		visSys,
 		aiSys,
 		combatSys,
+		missileSys,
 		lootSys,
 		cleanupSys,
 	}
@@ -129,6 +134,7 @@ func (m *InstanceManager) CreateCombatInstance(mainWorld *ecs.World, attackerID,
 		World:            instWorld,
 		Grid:             instGrid,
 		Systems:          instSystems,
+		CombatSys:        combatSys,
 		OriginalSystemID: m.systemID,
 		Participants:     []domain.EntityID{attackerID, defenderID},
 		Teams:            make(map[domain.EntityID]uint32),
@@ -313,9 +319,24 @@ func (m *InstanceManager) Update(mainWorld *ecs.World, dt float64) {
 }
 
 func (m *InstanceManager) broadcastInstanceSnapshot(inst *CombatInstance) {
-	var entSnaps []*protocol.EntitySnapshot
 	allEntities := inst.World.Query(0)
+	entSnaps := make([]*protocol.EntitySnapshot, 0, len(allEntities))
+	var missiles []*protocol.MissileState
 	for _, id := range allEntities {
+		// Missiles ride their own thin channel (below), not the ship-rendering entity list.
+		if et, ok := inst.World.GetEntityType(id); ok && et == domain.EntityMissile {
+			if tVal, ok := inst.World.GetComponent(id, domain.Transform{}); ok {
+				t := tVal.(*domain.Transform)
+				var dtype string
+				if mVal, ok := inst.World.GetComponent(id, domain.Missile{}); ok {
+					dtype = mVal.(*domain.Missile).DamageType
+				}
+				missiles = append(missiles, &protocol.MissileState{
+					Id: uint64(id), X: t.X, Y: t.Y, Rotation: t.Rotation, DamageType: dtype,
+				})
+			}
+			continue
+		}
 		snap := BuildCombatEntitySnapshot(inst.World, id)
 		if snap != nil {
 			entSnaps = append(entSnaps, snap)
@@ -325,6 +346,27 @@ func (m *InstanceManager) broadcastInstanceSnapshot(inst *CombatInstance) {
 	worldSnap := &protocol.WorldSnapshot{
 		Tick:     inst.TickCount,
 		Entities: entSnaps,
+		Missiles: missiles,
+	}
+
+	// Attach this tick's traveling-shot fire events (thin channel B3) so the client can draw
+	// bolts flying. Damage was already applied on the server; these are cosmetic hints only.
+	if inst.CombatSys != nil && len(inst.CombatSys.Fires) > 0 {
+		fires := make([]*protocol.FireEvent, 0, len(inst.CombatSys.Fires))
+		for _, f := range inst.CombatSys.Fires {
+			fires = append(fires, &protocol.FireEvent{
+				AttackerId:  uint64(f.AttackerID),
+				TargetId:    uint64(f.TargetID),
+				OriginX:     f.OriginX,
+				OriginY:     f.OriginY,
+				TargetX:     f.TargetX,
+				TargetY:     f.TargetY,
+				Speed:       f.Speed,
+				DamageType:  f.DamageType,
+				WeaponClass: f.WeaponClass,
+			})
+		}
+		worldSnap.FireEvents = fires
 	}
 
 	data, err := proto.Marshal(worldSnap)
@@ -527,9 +569,9 @@ func (m *InstanceManager) resolveCombat(mainWorld *ecs.World, inst *CombatInstan
 				lootEntity := mainWorld.CreateEntity(domain.EntityLootContainer)
 				mainWorld.AddComponent(lootEntity, &domain.Transform{X: posX, Y: posY})
 				mainWorld.AddComponent(lootEntity, &domain.Loot{Credits: credits})
-				if len(items) > 0 {
-					mainWorld.AddComponent(lootEntity, &domain.Cargo{Items: items, Capacity: 99999})
-				}
+				// Cargo is always attached (even for credit-only drops) — LootSystem's
+				// query requires it, otherwise the container is never auto-picked-up.
+				mainWorld.AddComponent(lootEntity, &domain.Cargo{Items: items, Capacity: 99999})
 				m.mainGrid.Insert(lootEntity, posX, posY)
 			}
 
@@ -674,6 +716,14 @@ func BuildCombatEntitySnapshot(world *ecs.World, id domain.EntityID) *protocol.E
 		s := sVal.(*domain.Shield)
 		snap.Shield = s.Current
 		snap.MaxShield = s.Max
+		// Directional-shield rendering: full bubble for omni/unset, otherwise the hull's arc,
+		// plus the heading the shield is actually held toward (matches the damage resolver).
+		if s.Type == "omni" || s.Type == "" || s.Arc <= 0 || s.Arc >= 360 {
+			snap.ShieldArc = 360
+		} else {
+			snap.ShieldArc = s.Arc
+		}
+		snap.ShieldFacing = shieldFacing(world, id, trans)
 	}
 	if aVal, ok := world.GetComponent(id, domain.ArmorGrid{}); ok {
 		a := aVal.(*domain.ArmorGrid)
@@ -686,11 +736,19 @@ func BuildCombatEntitySnapshot(world *ecs.World, id domain.EntityID) *protocol.E
 		snap.MaxFlux = int32(f.Capacity)
 		snap.Overloaded = f.Overloaded
 		snap.Venting = f.Venting
+		if f.OverloadTimer > 0 {
+			snap.OverloadTimer = f.OverloadTimer
+		}
 	}
 	if fxVal, ok := world.GetComponent(id, domain.CombatFx{}); ok {
 		fx := fxVal.(*domain.CombatFx)
 		snap.ShotsFired = fx.ShotsFired
 		snap.LastDamageType = fx.LastDamageType
+	}
+	if ssVal, ok := world.GetComponent(id, domain.SubsystemState{}); ok {
+		ss := ssVal.(*domain.SubsystemState)
+		snap.EngineHit = ss.EngineHitTimer > 0
+		snap.WeaponHit = ss.WeaponHitTimer > 0
 	}
 	if rVal, ok := world.GetComponent(id, domain.CombatRole{}); ok {
 		r := rVal.(*domain.CombatRole)

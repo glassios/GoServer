@@ -45,28 +45,87 @@ var indexHTML []byte
 //go:embed all:webclient/dist
 var client3dFS embed.FS
 
-// SafeConn wraps a websocket.Conn with a write mutex to prevent concurrent writes.
+// SafeConn wraps a websocket.Conn with an async, non-blocking writer. All sends go
+// through a buffered channel drained by a single writePump goroutine, so a slow client
+// can NEVER block the broadcaster (or other clients). If a client falls too far behind
+// (buffer full), its connection is dropped instead of stalling everyone.
 type SafeConn struct {
-	conn *websocket.Conn
-	wmu  sync.Mutex
+	conn   *websocket.Conn
+	send   chan []byte
+	closed chan struct{}
+	once   sync.Once
 }
+
+const wsSendBuffer = 256
 
 func NewSafeConn(conn *websocket.Conn) *SafeConn {
-	return &SafeConn{conn: conn}
+	sc := &SafeConn{
+		conn:   conn,
+		send:   make(chan []byte, wsSendBuffer),
+		closed: make(chan struct{}),
+	}
+	go sc.writePump()
+	return sc
 }
 
-func (sc *SafeConn) WriteMessage(msgType int, data []byte) error {
-	sc.wmu.Lock()
-	defer sc.wmu.Unlock()
-	return sc.conn.WriteMessage(msgType, data)
+func (sc *SafeConn) writePump() {
+	for {
+		select {
+		case data := <-sc.send:
+			_ = sc.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+			if err := sc.conn.WriteMessage(websocket.TextMessage, data); err != nil {
+				sc.shutdown()
+				return
+			}
+		case <-sc.closed:
+			return
+		}
+	}
+}
+
+// WriteMessage queues data for async delivery (msgType is assumed text). Non-blocking:
+// never blocks the caller (snapshot broadcaster / typed-push sender). If the per-client
+// buffer is full (the client briefly stalled — e.g. a GC freeze in the Unity client), we
+// DROP THE OLDEST queued message and enqueue the newest, rather than disconnecting. Latest
+// state wins, and a transient hitch no longer kills the connection. A truly dead socket is
+// still cleaned up by the writePump's write deadline / the reader's error.
+func (sc *SafeConn) WriteMessage(_ int, data []byte) error {
+	select {
+	case <-sc.closed:
+		return nil
+	default:
+	}
+	select {
+	case sc.send <- data:
+		return nil
+	default:
+	}
+	// Buffer full: drop oldest, then enqueue newest (best-effort, still non-blocking).
+	select {
+	case <-sc.send:
+	default:
+	}
+	select {
+	case sc.send <- data:
+	default:
+	}
+	return nil
 }
 
 func (sc *SafeConn) ReadJSON(v interface{}) error {
 	return sc.conn.ReadJSON(v)
 }
 
+func (sc *SafeConn) shutdown() {
+	sc.once.Do(func() {
+		close(sc.closed)
+		_ = sc.conn.Close()
+	})
+}
+
 func (sc *SafeConn) Close() error {
-	return sc.conn.Close()
+	sc.shutdown()
+	return nil
 }
 
 func (sc *SafeConn) RemoteAddr() interface{ String() string } {
@@ -99,14 +158,11 @@ func (m *WSManager) Remove(conn *SafeConn) {
 func (m *WSManager) Broadcast(data []byte) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	// WriteMessage is now async + non-blocking: it enqueues to each client's buffered
+	// send channel and drops a client that can't keep up, so one slow consumer can't
+	// stall delivery to everyone (the head-of-line freeze we were chasing).
 	for conn := range m.clients {
-		err := conn.WriteMessage(websocket.TextMessage, data)
-		if err != nil {
-			go func(c *SafeConn) {
-				c.Close()
-				m.Remove(c)
-			}(conn)
-		}
+		_ = conn.WriteMessage(websocket.TextMessage, data)
 	}
 }
 
@@ -129,6 +185,7 @@ type WSMessage struct {
 	VaultType        string      `json:"vault_type"`
 	ActionType       string      `json:"action_type"`
 	AlignWithFleetID uint64      `json:"align_with_fleet_id"`
+	Side             string      `json:"side"` // join_combat: "attacker" | "defender"
 	ShipID           uint32      `json:"ship_id"`
 	Role             string      `json:"role"`
 	Strategy         string      `json:"strategy"`
@@ -141,6 +198,14 @@ type WSMessage struct {
 	RecipeID string `json:"recipe_id"`
 	// Phase 3 research
 	ProjectID string `json:"project_id"`
+	// Pre-battle fleet formation (battle-line grid)
+	Formation []WSFormationSlot `json:"formation"`
+}
+
+type WSFormationSlot struct {
+	ShipID uint32 `json:"ship_id"`
+	Rank   int32  `json:"rank"`
+	Col    int32  `json:"col"`
 }
 
 func (m *WSMessage) GetTargetID() uint64 {
@@ -423,7 +488,9 @@ func main() {
 			return
 		}
 
-		// Broadcast snapshot to WebSockets
+		// Broadcast snapshot to WebSockets (every system to every client — the web
+		// visualizer relies on this for its cross-system spectator tabs). The Unity client
+		// filters/throttles its own parsing instead.
 		mOpts := protojson.MarshalOptions{UseProtoNames: true, EmitUnpopulated: true}
 		snapJSON, err := mOpts.Marshal(&worldSnap)
 		if err == nil {
@@ -564,6 +631,26 @@ func main() {
 				if proto.Unmarshal(packet.Payload, &research) == nil {
 					payloadJSON, jsonErr = mOpts.Marshal(&research)
 				}
+			case protocol.PacketType_S_TARGET_ACTIONS:
+				var ta protocol.TargetActions
+				if proto.Unmarshal(packet.Payload, &ta) == nil {
+					payloadJSON, jsonErr = mOpts.Marshal(&ta)
+				}
+			case protocol.PacketType_S_HAIL_RESPONSE:
+				var hr protocol.HailResponse
+				if proto.Unmarshal(packet.Payload, &hr) == nil {
+					payloadJSON, jsonErr = mOpts.Marshal(&hr)
+				}
+			case protocol.PacketType_S_COLONIES_STATUS:
+					var col protocol.ColoniesStatus
+					if proto.Unmarshal(packet.Payload, &col) == nil {
+						payloadJSON, jsonErr = mOpts.Marshal(&col)
+					}
+				case protocol.PacketType_S_CONTAINER_CONTENTS:
+				var cc protocol.ContainerContents
+				if proto.Unmarshal(packet.Payload, &cc) == nil {
+					payloadJSON, jsonErr = mOpts.Marshal(&cc)
+				}
 			}
 
 			if len(payloadJSON) > 0 && jsonErr == nil {
@@ -593,6 +680,32 @@ func main() {
 	} else {
 		http.Handle("/client3d/", http.StripPrefix("/client3d/", http.FileServer(http.FS(client3dSub))))
 	}
+
+	// New full game client (WebClientUI, dc-runtime) served at /play/. Unlike the
+	// embedded static index.html, this is a multi-file tree (support.js, net.js,
+	// world.js, textures/) read from disk relative to the gateway's working
+	// directory (repo root, per run_servers.bat). /play/ serves the HTML entry;
+	// everything else under /play/ is served as a static asset.
+	playFS := http.FileServer(http.Dir("WebClientUI"))
+	http.HandleFunc("/play/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/play/" {
+			http.ServeFile(w, r, "WebClientUI/web_client_game.html")
+			return
+		}
+		http.StripPrefix("/play/", playFS).ServeHTTP(w, r)
+	})
+
+	// "Order New Dawn" battle client (WebClientBattle) served at /ond/. Reuses the /play/
+	// transport (net.js) but renders battles with the prototype's WebGL renderer battle-gl.js
+	// driven by a snapshot→B adapter. Multi-file tree read from disk (repo root).
+	ondFS := http.FileServer(http.Dir("WebClientBattle"))
+	http.HandleFunc("/ond/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/ond/" {
+			http.ServeFile(w, r, "WebClientBattle/index.html")
+			return
+		}
+		http.StripPrefix("/ond/", ondFS).ServeHTTP(w, r)
+	})
 
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		rawConn, err := upgrader.Upgrade(w, r, nil)
@@ -735,6 +848,7 @@ func main() {
 						joinReq := &protocol.JoinCombatRequest{
 							CombatInstanceId: uint32(msg.GetTargetID()),
 							AlignWithFleetId: msg.AlignWithFleetID,
+							Side:             msg.Side,
 						}
 						payload, _ := proto.Marshal(joinReq)
 						serverCmd := &protocol.ServerCommand{
@@ -768,6 +882,42 @@ func main() {
 						data, _ := proto.Marshal(serverCmd)
 						if pubErr := bus.Publish(fmt.Sprintf("system.%d.input", systemID), data); pubErr != nil {
 							logger.Error("Failed to publish WS set_fleet_tactics to NATS", zap.Error(pubErr))
+						}
+					}
+
+				case "set_fleet_formation":
+					wsPlayersMu.RLock()
+					wp, exists := wsConns[conn]
+					wsPlayersMu.RUnlock()
+					if exists {
+						systemID := routingTable.Get(wp.playerID)
+						slots := make([]*protocol.FleetFormationSlot, 0, len(msg.Formation))
+						for _, s := range msg.Formation {
+							slots = append(slots, &protocol.FleetFormationSlot{ShipId: s.ShipID, Rank: s.Rank, Col: s.Col})
+						}
+						setReq := &protocol.SetFleetFormation{Slots: slots}
+						payload, _ := proto.Marshal(setReq)
+						serverCmd := &protocol.ServerCommand{
+							PlayerId: uint64(wp.playerID),
+							Type:     protocol.PacketType_C_SET_FLEET_FORMATION,
+							Payload:  payload,
+						}
+						data, _ := proto.Marshal(serverCmd)
+						if pubErr := bus.Publish(fmt.Sprintf("system.%d.input", systemID), data); pubErr != nil {
+							logger.Error("Failed to publish WS set_fleet_formation to NATS", zap.Error(pubErr))
+						}
+					}
+
+				case "get_colonies":
+					wsPlayersMu.RLock()
+					wp, exists := wsConns[conn]
+					wsPlayersMu.RUnlock()
+					if exists {
+						systemID := routingTable.Get(wp.playerID)
+						serverCmd := &protocol.ServerCommand{PlayerId: uint64(wp.playerID), Type: protocol.PacketType_C_GET_COLONIES}
+						data, _ := proto.Marshal(serverCmd)
+						if pubErr := bus.Publish(fmt.Sprintf("system.%d.input", systemID), data); pubErr != nil {
+							logger.Error("Failed to publish WS get_colonies to NATS", zap.Error(pubErr))
 						}
 					}
 
@@ -1006,6 +1156,28 @@ func main() {
 						}
 					}
 
+				case "jettison":
+					wsPlayersMu.RLock()
+					wp, exists := wsConns[conn]
+					wsPlayersMu.RUnlock()
+					if exists {
+						systemID := routingTable.Get(wp.playerID)
+						jettisonReq := &protocol.JettisonInput{
+							Resource: msg.Resource,
+							Amount:   msg.Amount,
+						}
+						payload, _ := proto.Marshal(jettisonReq)
+						serverCmd := &protocol.ServerCommand{
+							PlayerId: uint64(wp.playerID),
+							Type:     protocol.PacketType_C_JETTISON_INPUT,
+							Payload:  payload,
+						}
+						data, _ := proto.Marshal(serverCmd)
+						if pubErr := bus.Publish(fmt.Sprintf("system.%d.input", systemID), data); pubErr != nil {
+							logger.Error("Failed to publish WS jettison to NATS", zap.Error(pubErr))
+						}
+					}
+
 				case "vault_action":
 					wsPlayersMu.RLock()
 					wp, exists := wsConns[conn]
@@ -1028,6 +1200,96 @@ func main() {
 						data, _ := proto.Marshal(serverCmd)
 						if pubErr := bus.Publish(fmt.Sprintf("system.%d.input", systemID), data); pubErr != nil {
 							logger.Error("Failed to publish WS vault action to NATS", zap.Error(pubErr))
+						}
+					}
+
+				case "query_actions":
+					wsPlayersMu.RLock()
+					wp, exists := wsConns[conn]
+					wsPlayersMu.RUnlock()
+					if exists {
+						systemID := routingTable.Get(wp.playerID)
+						payload, _ := proto.Marshal(&protocol.QueryActionsRequest{TargetId: msg.GetTargetID()})
+						serverCmd := &protocol.ServerCommand{
+							PlayerId: uint64(wp.playerID),
+							Type:     protocol.PacketType_C_QUERY_ACTIONS,
+							Payload:  payload,
+						}
+						data, _ := proto.Marshal(serverCmd)
+						if pubErr := bus.Publish(fmt.Sprintf("system.%d.input", systemID), data); pubErr != nil {
+							logger.Error("Failed to publish WS query_actions to NATS", zap.Error(pubErr))
+						}
+					}
+
+				case "attack":
+					wsPlayersMu.RLock()
+					wp, exists := wsConns[conn]
+					wsPlayersMu.RUnlock()
+					if exists {
+						systemID := routingTable.Get(wp.playerID)
+						payload, _ := proto.Marshal(&protocol.AttackNpcRequest{TargetId: msg.GetTargetID()})
+						serverCmd := &protocol.ServerCommand{
+							PlayerId: uint64(wp.playerID),
+							Type:     protocol.PacketType_C_ATTACK_NPC_REQUEST,
+							Payload:  payload,
+						}
+						data, _ := proto.Marshal(serverCmd)
+						if pubErr := bus.Publish(fmt.Sprintf("system.%d.input", systemID), data); pubErr != nil {
+							logger.Error("Failed to publish WS attack to NATS", zap.Error(pubErr))
+						}
+					}
+
+				case "follow", "escort":
+					wsPlayersMu.RLock()
+					wp, exists := wsConns[conn]
+					wsPlayersMu.RUnlock()
+					if exists {
+						systemID := routingTable.Get(wp.playerID)
+						payload, _ := proto.Marshal(&protocol.SetFollowRequest{TargetId: msg.GetTargetID()})
+						serverCmd := &protocol.ServerCommand{
+							PlayerId: uint64(wp.playerID),
+							Type:     protocol.PacketType_C_SET_FOLLOW,
+							Payload:  payload,
+						}
+						data, _ := proto.Marshal(serverCmd)
+						if pubErr := bus.Publish(fmt.Sprintf("system.%d.input", systemID), data); pubErr != nil {
+							logger.Error("Failed to publish WS follow to NATS", zap.Error(pubErr))
+						}
+					}
+
+				case "hail", "talk":
+					wsPlayersMu.RLock()
+					wp, exists := wsConns[conn]
+					wsPlayersMu.RUnlock()
+					if exists {
+						systemID := routingTable.Get(wp.playerID)
+						payload, _ := proto.Marshal(&protocol.HailRequest{TargetId: msg.GetTargetID()})
+						serverCmd := &protocol.ServerCommand{
+							PlayerId: uint64(wp.playerID),
+							Type:     protocol.PacketType_C_HAIL,
+							Payload:  payload,
+						}
+						data, _ := proto.Marshal(serverCmd)
+						if pubErr := bus.Publish(fmt.Sprintf("system.%d.input", systemID), data); pubErr != nil {
+							logger.Error("Failed to publish WS hail to NATS", zap.Error(pubErr))
+						}
+					}
+
+				case "scan":
+					wsPlayersMu.RLock()
+					wp, exists := wsConns[conn]
+					wsPlayersMu.RUnlock()
+					if exists {
+						systemID := routingTable.Get(wp.playerID)
+						payload, _ := proto.Marshal(&protocol.ScanContainerRequest{TargetId: msg.GetTargetID()})
+						serverCmd := &protocol.ServerCommand{
+							PlayerId: uint64(wp.playerID),
+							Type:     protocol.PacketType_C_SCAN_CONTAINER,
+							Payload:  payload,
+						}
+						data, _ := proto.Marshal(serverCmd)
+						if pubErr := bus.Publish(fmt.Sprintf("system.%d.input", systemID), data); pubErr != nil {
+							logger.Error("Failed to publish WS scan to NATS", zap.Error(pubErr))
 						}
 					}
 				}

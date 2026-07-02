@@ -1,0 +1,742 @@
+{
+  "_README": {
+    "about": "OLDSECTOR component presets edited in the in-game EDIT screen. Live working copy is mirrored to localStorage 'oldsector_editPresets'; this file is the seed/default and the canonical export format (use the EXPORT JSON button to copy edits back here).",
+    "units": {
+      "engine.coreSpeed/envSpeed": "exhaust ejection speed in screen px/frame (base; a small random variance is added at spawn)",
+      "engine.coreLife/envLife": "particle lifetime in frames (length of the plume)",
+      "engine.coreSize/envSize": "base particle radius (multiplied by the renderer fade ramp)",
+      "engine.coreScatter/envScatter": "lateral spread of the jet (0 = collimated)",
+      "engine.brightness": "additive alpha multiplier of the whole plume",
+      "engine.flashIntensity": "brightness of the flickering blue point-light at the nozzle cluster",
+      "engine.emitRate": "particles emitted per frame at full thrust",
+      "projectile.speed": "world units / frame",
+      "projectile.radius": "collision radius / hull-impact size",
+      "projectile.life": "frames before the round expires (range)",
+      "projectile.glowSize/coreSize": "rendered streak widths in px",
+      "projectile.tail": "streak tail length multiplier",
+      "turret.barrels": "number of muzzles",
+      "turret.fireMode": "'sequential' = one barrel after another, 'volley' = all barrels at once",
+      "turret.spreadPct": "shot dispersion as a percent",
+      "turret.arcDeg": "total fire arc the turret can traverse (degrees)",
+      "turret.turnSpeed": "traverse speed (degrees / second)",
+      "turret.reload": "seconds between bursts",
+      "turret.magazine": "rounds per magazine before a longer reload",
+      "turret.projId": "id of the projectile preset this turret fires",
+      "hull.engineId": "engine preset whose particle params drive every engine slot on this hull",
+      "hull.turretSlots": "explicit, draggable weapon mounts: [{id, x, y, size, turretId}]. x=forward (>0 nose), y=lateral, both fractions of the sprite quad from hull center. size = 'S'|'M'|'L'. turretId = turret preset (null=empty).",
+      "hull.engineSlots": "explicit, draggable exhaust nozzles: [{id, x, y, size}]. Same coordinate space; flames spawn here using engineId's params.",
+      "hull.material": "{color: hex tint, metal: 0..1 metallic, rough: 0..1 roughness} fed to the PBR sprite shader (uTint/uMetal/uRough).",
+      "beam.mode": "'continuous' = sustained ray that charges up and holds on target; 'pulse' = rapid blinking ray that flashes on for pulseLen then reloads",
+      "beam.reach": "max beam length / engagement range in world units",
+      "beam.damage": "continuous = damage-per-second; pulse = damage per flash",
+      "beam.coreWidth/glowWidth": "rendered beam widths in px (bright inner spine + soft outer glow)",
+      "beam.chargeUp": "continuous only — seconds from first fire to full-power beam",
+      "beam.pulseRate": "pulse only — flashes per second",
+      "beam.pulseLen": "pulse only — on-time of each flash in ms",
+      "beam.flicker": "intensity jitter in Hz (visual shimmer)",
+      "beam.selfFluxPct": "percent of dealt damage added to the shooter's own flux"
+    }
+  },
+  "engines": [
+    {
+      "id": "eng_ion",
+      "name": "Standard Ion Drive",
+      "coreColor": "#cfe4ff",
+      "envColor": "#3aa0ff",
+      "flashColor": "#5a9eff",
+      "coreSize": 1.53,
+      "envSize": 2.34,
+      "coreSpeed": 2.3,
+      "envSpeed": 1.2,
+      "coreLife": 7,
+      "envLife": 12,
+      "coreScatter": 0.045,
+      "envScatter": 0.198,
+      "brightness": 1,
+      "flashIntensity": 0.66,
+      "emitRate": 2.6
+    },
+    {
+      "id": "eng_burner",
+      "name": "Afterburner",
+      "coreColor": "#fff0d6",
+      "envColor": "#ff8a3a",
+      "flashColor": "#ffb060",
+      "coreSize": 1.8,
+      "envSize": 3,
+      "coreSpeed": 3.2,
+      "envSpeed": 1.8,
+      "coreLife": 9,
+      "envLife": 16,
+      "coreScatter": 0.05,
+      "envScatter": 0.22,
+      "brightness": 1.15,
+      "flashIntensity": 0.8,
+      "emitRate": 3.4
+    },
+    {
+      "id": "eng_plasma",
+      "name": "Plasma Coil v2",
+      "coreColor": "#b30000",
+      "envColor": "#ff0000",
+      "flashColor": "#ff5900",
+      "coreSize": 3.05,
+      "envSize": 4.05,
+      "coreSpeed": 1.6,
+      "envSpeed": 0.3,
+      "coreLife": 17,
+      "envLife": 21,
+      "coreScatter": 0.02,
+      "envScatter": 0,
+      "brightness": 1.4,
+      "flashIntensity": 1.5,
+      "emitRate": 6
+    }
+  ],
+  "projectiles": [
+    {
+      "id": "proj_kinetic",
+      "name": "Kinetic Slug Green",
+      "type": "kinetic",
+      "speed": 0.016,
+      "radius": 8,
+      "life": 65,
+      "damage": 12,
+      "spread": 5,
+      "coreColor": "#d9ffe6",
+      "glowColor": "#26ff66",
+      "glowSize": 2,
+      "coreSize": 0.5,
+      "tail": 1.5
+    },
+    {
+      "id": "proj_he",
+      "name": "HE Shell",
+      "type": "he",
+      "speed": 0.003,
+      "radius": 3.4,
+      "life": 200,
+      "damage": 11,
+      "spread": 3.5,
+      "coreColor": "#fff2c4",
+      "glowColor": "#ff8c1f",
+      "glowSize": 2.5,
+      "coreSize": 1.25,
+      "tail": 3
+    },
+    {
+      "id": "proj_pirate",
+      "name": "Pirate Slug",
+      "type": "kinetic",
+      "speed": 0.013,
+      "radius": 2,
+      "life": 80,
+      "damage": 5,
+      "spread": 7,
+      "coreColor": "#ffd9cc",
+      "glowColor": "#ff4d38",
+      "glowSize": 6,
+      "coreSize": 2.4,
+      "tail": 0.4
+    },
+    {
+      "id": "proj_pulse",
+      "name": "Pulse Bolt",
+      "type": "energy",
+      "speed": 0.003,
+      "radius": 0.5,
+      "life": 70,
+      "damage": 6,
+      "spread": 3,
+      "coreColor": "#dffaff",
+      "glowColor": "#39d6ff",
+      "glowSize": 8,
+      "coreSize": 3,
+      "tail": 0.9
+    }
+  ],
+  "beams": [
+    {
+      "id": "beam_lance",
+      "name": "Tachyon Lance",
+      "sizeClass": "M",
+      "mode": "continuous",
+      "type": "energy",
+      "coreColor": "#eafbff",
+      "glowColor": "#39d6ff",
+      "coreWidth": 2.2,
+      "glowWidth": 9,
+      "reach": 1.1,
+      "damage": 90,
+      "chargeUp": 0.6,
+      "pulseRate": 6,
+      "pulseLen": 90,
+      "flicker": 6,
+      "selfFluxPct": 10,
+      "mass": 60
+    },
+    {
+      "id": "beam_pulse",
+      "name": "Pulse Laser",
+      "sizeClass": "S",
+      "mode": "pulse",
+      "type": "energy",
+      "coreColor": "#fff0d6",
+      "glowColor": "#ff5a3a",
+      "coreWidth": 1.6,
+      "glowWidth": 6,
+      "reach": 0.8,
+      "damage": 18,
+      "chargeUp": 0.5,
+      "pulseRate": 5,
+      "pulseLen": 110,
+      "flicker": 4,
+      "selfFluxPct": 8,
+      "mass": 38
+    }
+  ],
+  "missiles": [
+    { "id": "msl_harpoon", "name": "Harpoon MRM", "sizeClass": "M", "guid": "homing", "target": "hull", "damage": 18, "life": 230, "radius": 2.4, "speed": 0.018, "turn": 0.06, "accel": 0.0005, "ammo": 8, "reload": 160, "swarm": 1, "loftAmp": 0.5, "coreColor": "#fff0d6", "glowColor": "#ff8a3a", "exColor": "#ff8a3a", "glowSize": 6.5, "coreSize": 2.8, "tail": 3 },
+    { "id": "msl_reaper", "name": "Reaper Torpedo", "sizeClass": "L", "guid": "lofted", "target": "hull", "damage": 52, "life": 280, "radius": 3.2, "speed": 0.013, "turn": 0.03, "accel": 0.0003, "ammo": 4, "reload": 300, "swarm": 1, "loftAmp": 0.6, "coreColor": "#ffe0c0", "glowColor": "#ff6a2a", "exColor": "#ff6a2a", "glowSize": 8.5, "coreSize": 3.6, "tail": 3.5 },
+    { "id": "msl_swarmer", "name": "Swarmer SRM", "sizeClass": "S", "guid": "weaving", "target": "engines", "damage": 7, "life": 180, "radius": 1.6, "speed": 0.022, "turn": 0.09, "accel": 0.0006, "ammo": 20, "reload": 90, "swarm": 3, "loftAmp": 0.4, "coreColor": "#eaffe6", "glowColor": "#39d6ff", "exColor": "#39d6ff", "glowSize": 5, "coreSize": 2.2, "tail": 2.5 }
+  ],
+  "turrets": [
+    {
+      "slot": "M",
+      "id": "tur_missile_rack",
+      "name": "Missile Rack",
+      "barrels": 1,
+      "fireMode": "volley",
+      "spreadPct": 0,
+      "arcDeg": 90,
+      "turnSpeed": 60,
+      "reload": 1,
+      "magazine": 1,
+      "ammoType": "missile",
+      "missileId": "msl_harpoon",
+      "projId": "proj_kinetic",
+      "tex": "t2m",
+      "material": { "color": "#8f99a3", "metal": 0.6, "rough": 0.45 },
+      "pivot": [ -0.14, 0 ],
+      "muzzles": [ [ 0.45, 0 ] ],
+      "pos": [ 0, 0 ],
+      "mirrored": true,
+      "scaleBySlot": { "S": 0.32, "M": 0.48, "L": 0.66 }
+    },
+    {
+      "slot": "M",
+      "id": "tur_rocket_pod",
+      "name": "Rocket Pod",
+      "barrels": 3,
+      "fireMode": "sequential",
+      "spreadPct": 3,
+      "arcDeg": 70,
+      "turnSpeed": 50,
+      "reload": 1.4,
+      "magazine": 6,
+      "ammoType": "missile",
+      "missileId": "msl_swarmer",
+      "projId": "proj_kinetic",
+      "tex": "trk",
+      "material": { "color": "#b8c0c8", "metal": 0.62, "rough": 0.42 },
+      "pivot": [ -0.06, 0 ],
+      "muzzles": [ [ 0.44, -0.24 ], [ 0.46, 0 ], [ 0.44, 0.24 ] ],
+      "pos": [ 0, 0 ],
+      "mirrored": true,
+      "scaleBySlot": { "S": 0.34, "M": 0.5, "L": 0.68 }
+    },
+    {
+      "slot": "M",
+      "id": "tur_laser",
+      "name": "Laser Projector",
+      "barrels": 1,
+      "fireMode": "volley",
+      "spreadPct": 0,
+      "arcDeg": 110,
+      "turnSpeed": 80,
+      "reload": 1,
+      "magazine": 1,
+      "ammoType": "beam",
+      "beamId": "beam_lance",
+      "projId": "proj_pulse",
+      "tex": "tlas",
+      "material": {
+        "color": "#b8c0c8",
+        "metal": 0.72,
+        "rough": 0.3
+      },
+      "pivot": [
+        -0.12,
+        0
+      ],
+      "muzzles": [
+        [
+          0.47,
+          0
+        ]
+      ],
+      "pos": [
+        0,
+        0
+      ],
+      "mirrored": true,
+      "scaleBySlot": {
+        "S": 0.3,
+        "M": 0.46,
+        "L": 0.64
+      }
+    },
+    {
+      "slot": "L",
+      "id": "tur_dual_mk2",
+      "name": "Dual Mauler MK-II",
+      "barrels": 2,
+      "fireMode": "volley",
+      "spreadPct": 6,
+      "arcDeg": 90,
+      "turnSpeed": 55,
+      "reload": 1.9,
+      "magazine": 6,
+      "projId": "proj_he",
+      "tex": "t2m",
+      "material": {
+        "color": "#b8c0c8",
+        "metal": 0.72,
+        "rough": 0.34
+      },
+      "pivot": [
+        -0.15,
+        0
+      ],
+      "muzzles": [
+        [
+          0.485,
+          -0.137
+        ],
+        [
+          0.485,
+          0.139
+        ]
+      ],
+      "pos": [
+        0,
+        0
+      ],
+      "mirrored": true,
+      "scaleBySlot": {
+        "S": 0.33,
+        "M": 0.5,
+        "L": 0.7
+      }
+    },
+    {
+      "slot": "M",
+      "id": "tur_light",
+      "name": "Light Autocannon",
+      "barrels": 1,
+      "fireMode": "volley",
+      "spreadPct": 5,
+      "arcDeg": 120,
+      "turnSpeed": 90,
+      "reload": 1.2,
+      "magazine": 8,
+      "projId": "proj_kinetic",
+      "tex": "t2c",
+      "material": {
+        "color": "#b8c0c8",
+        "metal": 0.7,
+        "rough": 0.35
+      },
+      "pivot": [
+        -0.1,
+        0
+      ],
+      "muzzles": [
+        [
+          0.47,
+          0
+        ]
+      ],
+      "pos": [
+        0,
+        0
+      ],
+      "mirrored": true,
+      "scaleBySlot": {
+        "S": 0.297,
+        "M": 0.45,
+        "L": 0.63
+      }
+    },
+    {
+      "slot": "M",
+      "id": "tur_twin",
+      "name": "Twin Cannon",
+      "barrels": 1,
+      "fireMode": "volley",
+      "spreadPct": 8,
+      "arcDeg": 30,
+      "turnSpeed": 70,
+      "reload": 1.5,
+      "magazine": 10,
+      "projId": "proj_kinetic",
+      "tex": "t2c",
+      "material": {
+        "color": "#b8c0c8",
+        "metal": 0.7,
+        "rough": 0.35
+      },
+      "pivot": [
+        -0.1,
+        0
+      ],
+      "muzzles": [
+        [
+          0.47,
+          0
+        ]
+      ],
+      "pos": [
+        0,
+        0
+      ],
+      "mirrored": true,
+      "scaleBySlot": {
+        "S": 0.297,
+        "M": 0.45,
+        "L": 0.63
+      }
+    },
+    {
+      "slot": "M",
+      "id": "tur_heavy",
+      "name": "Heavy Mauler",
+      "barrels": 1,
+      "fireMode": "sequential",
+      "spreadPct": 4,
+      "arcDeg": 60,
+      "turnSpeed": 40,
+      "reload": 2,
+      "magazine": 6,
+      "projId": "proj_he",
+      "tex": "t2c",
+      "material": {
+        "color": "#b8c0c8",
+        "metal": 0.7,
+        "rough": 0.35
+      },
+      "pivot": [
+        -0.1,
+        0
+      ],
+      "muzzles": [
+        [
+          0.47,
+          0
+        ]
+      ],
+      "pos": [
+        0,
+        0
+      ],
+      "mirrored": true,
+      "scaleBySlot": {
+        "S": 0.297,
+        "M": 0.45,
+        "L": 0.63
+      }
+    },
+    {
+      "slot": "M",
+      "id": "tur_pulse",
+      "name": "Pulse Array",
+      "barrels": 3,
+      "fireMode": "sequential",
+      "spreadPct": 3,
+      "arcDeg": 150,
+      "turnSpeed": 110,
+      "reload": 0.9,
+      "magazine": 12,
+      "projId": "proj_pulse",
+      "tex": "t2l",
+      "material": {
+        "color": "#b8c0c8",
+        "metal": 0.7,
+        "rough": 0.35
+      },
+      "pivot": [
+        -0.1,
+        0
+      ],
+      "muzzles": [
+        [
+          0.47,
+          -0.16
+        ],
+        [
+          0.47,
+          0
+        ],
+        [
+          0.47,
+          0.16
+        ]
+      ],
+      "pos": [
+        0,
+        0
+      ],
+      "mirrored": true,
+      "scaleBySlot": {
+        "S": 0.297,
+        "M": 0.45,
+        "L": 0.63
+      }
+    }
+  ],
+  "hulls": [
+    {
+      "id": "hull_vindicator",
+      "name": "Vindicator",
+      "hullTex": "frig",
+      "engineId": "eng_ion",
+      "material": {
+        "color": "#3b7d52",
+        "metal": 0.14,
+        "rough": 0.12
+      },
+      "turretSlots": [
+        {
+          "id": "ts1",
+          "x": 0.46,
+          "y": 0,
+          "size": "M",
+          "turretId": null
+        },
+        {
+          "id": "ts_yt7ws",
+          "x": 0.25,
+          "y": 0,
+          "size": "M",
+          "turretId": "tur_light"
+        },
+        {
+          "id": "ts_ndy8j",
+          "x": 0.25,
+          "y": 0,
+          "size": "M",
+          "turretId": "tur_light"
+        }
+      ],
+      "engineSlots": [
+        {
+          "id": "es1",
+          "x": -0.494,
+          "y": -0.129,
+          "size": "M"
+        },
+        {
+          "id": "es2",
+          "x": -0.494,
+          "y": 0.116,
+          "size": "M"
+        },
+        {
+          "id": "es3",
+          "x": -0.457,
+          "y": -0.431,
+          "size": "M"
+        },
+        {
+          "id": "es4",
+          "x": -0.468,
+          "y": 0.412,
+          "size": "L"
+        }
+      ]
+    },
+    {
+      "id": "hull_aegis",
+      "name": "Aegis",
+      "hullTex": "dest",
+      "engineId": "eng_burner",
+      "material": {
+        "color": "#d1e8ff",
+        "metal": 1,
+        "rough": 0.7
+      },
+      "turretSlots": [
+        {
+          "id": "ts1",
+          "x": 0.44,
+          "y": -0.04,
+          "size": "M",
+          "turretId": "tur_heavy"
+        },
+        {
+          "id": "ts2",
+          "x": 0.44,
+          "y": 0.04,
+          "size": "M",
+          "turretId": "tur_heavy"
+        },
+        {
+          "id": "ts3",
+          "x": 0.18,
+          "y": -0.16,
+          "size": "M",
+          "turretId": "tur_light"
+        },
+        {
+          "id": "ts4",
+          "x": 0.18,
+          "y": 0.16,
+          "size": "M",
+          "turretId": "tur_light"
+        },
+        {
+          "id": "ts5",
+          "x": -0.05,
+          "y": -0.27,
+          "size": "M",
+          "turretId": "tur_twin"
+        },
+        {
+          "id": "ts6",
+          "x": -0.05,
+          "y": 0.27,
+          "size": "M",
+          "turretId": "tur_twin"
+        }
+      ],
+      "engineSlots": [
+        {
+          "id": "es1",
+          "x": -0.394,
+          "y": -0.31,
+          "size": "M"
+        },
+        {
+          "id": "es2",
+          "x": -0.493,
+          "y": -0.15,
+          "size": "M"
+        },
+        {
+          "id": "es3",
+          "x": -0.491,
+          "y": 0.138,
+          "size": "M"
+        },
+        {
+          "id": "es4",
+          "x": -0.48,
+          "y": 0.29,
+          "size": "M"
+        }
+      ]
+    },
+    {
+      "id": "hull_talon",
+      "name": "Talon",
+      "hullTex": "frig",
+      "engineId": "eng_ion",
+      "material": {
+        "color": "#9aa6b2",
+        "metal": 0.6,
+        "rough": 0.4
+      },
+      "turretSlots": [
+        {
+          "id": "ts1",
+          "x": 0.46,
+          "y": 0,
+          "size": "M",
+          "turretId": "tur_pulse"
+        },
+        {
+          "id": "ts2",
+          "x": 0.12,
+          "y": -0.13,
+          "size": "M",
+          "turretId": "tur_light"
+        },
+        {
+          "id": "ts3",
+          "x": 0.12,
+          "y": 0.13,
+          "size": "M",
+          "turretId": "tur_light"
+        },
+        {
+          "id": "ts4",
+          "x": -0.05,
+          "y": -0.16,
+          "size": "M",
+          "turretId": "tur_twin"
+        },
+        {
+          "id": "ts5",
+          "x": -0.05,
+          "y": 0.16,
+          "size": "M",
+          "turretId": "tur_twin"
+        }
+      ],
+      "engineSlots": [
+        {
+          "id": "es1",
+          "x": -0.46,
+          "y": -0.07,
+          "size": "M"
+        },
+        {
+          "id": "es2",
+          "x": -0.46,
+          "y": 0.07,
+          "size": "M"
+        },
+        {
+          "id": "es3",
+          "x": -0.425,
+          "y": -0.42,
+          "size": "M"
+        },
+        {
+          "id": "es4",
+          "x": -0.425,
+          "y": 0.42,
+          "size": "M"
+        }
+      ]
+    }
+  ],
+  "shields": [
+    {
+      "id": "shield_std",
+      "name": "Deflector Mk-I",
+      "arcDeg": 180,
+      "band": 1,
+      "color": "#ff8a3a",
+      "flicker": 5,
+      "resKinetic": 0,
+      "resHE": 20,
+      "resEnergy": 0,
+      "resBio": 0,
+      "mass": 120
+    },
+    {
+      "id": "shield_omni",
+      "name": "Omni Barrier",
+      "arcDeg": 320,
+      "band": 1.3,
+      "color": "#39d6ff",
+      "flicker": 8,
+      "resKinetic": 10,
+      "resHE": 10,
+      "resEnergy": 10,
+      "resBio": 10,
+      "mass": 220
+    }
+  ]
+}

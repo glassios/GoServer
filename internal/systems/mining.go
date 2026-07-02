@@ -13,12 +13,30 @@ type MiningSystem struct {
 	eventBus        domain.EventBus
 	progressBus     messaging.MessageBus // optional: pushes S_PLAYER_PROGRESS on XP gain
 	accumulatedTime float64
+	// mined accumulates miner IDs whose cargo grew this tick, so the world node can
+	// push an s_inventory_update for them (mining has no client command/response).
+	mined map[domain.EntityID]bool
 }
 
 func NewMiningSystem(eventBus domain.EventBus) *MiningSystem {
 	return &MiningSystem{
 		eventBus: eventBus,
+		mined:    make(map[domain.EntityID]bool),
 	}
+}
+
+// DrainUpdated returns and clears the set of miner IDs whose cargo changed since the
+// last call (so the caller can send each an inventory update).
+func (s *MiningSystem) DrainUpdated() []domain.EntityID {
+	if len(s.mined) == 0 {
+		return nil
+	}
+	ids := make([]domain.EntityID, 0, len(s.mined))
+	for id := range s.mined {
+		ids = append(ids, id)
+	}
+	s.mined = make(map[domain.EntityID]bool)
+	return ids
 }
 
 // SetProgressBus wires the messaging bus used to push skill/XP updates to mining players.
@@ -89,13 +107,14 @@ func (s *MiningSystem) Update(world *ecs.World, dt float64) {
 			continue // Out of range, wait
 		}
 
-		// Calculate cargo usage
-		currentVolume := int32(0)
-		for _, item := range cargo.Items {
-			currentVolume += item.Quantity
+		// Cargo capacity is measured in VOLUME units; convert free volume to a unit count
+		// for the mined resource.
+		unitVol := domain.VolumeForID(domain.ResourceToID[asteroid.Type])
+		if unitVol <= 0 {
+			unitVol = 1
 		}
-
-		freeSpace := cargo.Capacity - currentVolume
+		freeVol := float32(cargo.Capacity) - cargo.LoadVolume()
+		freeSpace := int32(freeVol / unitVol)
 		if freeSpace <= 0 {
 			laser.Active = false
 			continue
@@ -130,6 +149,7 @@ func (s *MiningSystem) Update(world *ecs.World, dt float64) {
 		asteroid.Amount -= mineAmount
 		cargo.AddResourceTypeQuantity(asteroid.Type, mineAmount)
 		laser.LastMine = s.accumulatedTime
+		s.mined[minerID] = true // flag for an inventory push this tick
 
 		// Award mining XP and push progress to the player.
 		if progress != nil {

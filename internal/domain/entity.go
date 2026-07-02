@@ -23,6 +23,7 @@ const (
 	EntityCombatMarker
 	EntitySpaceBase
 	EntityPlanet
+	EntityMissile
 )
 
 func (e EntityType) String() string {
@@ -47,6 +48,8 @@ func (e EntityType) String() string {
 		return "SpaceBase"
 	case EntityPlanet:
 		return "Planet"
+	case EntityMissile:
+		return "Missile"
 	default:
 		return "Unknown"
 	}

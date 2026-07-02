@@ -1,0 +1,36 @@
+{
+  "_README": {
+    "about": "Per-hull geometry for the tactical battle. All coordinates are fractions of the ship sprite quad, measured from the HULL CENTER, as [forward, lateral].",
+    "forward": "along the ship's facing axis. forward > 0 = toward the NOSE, forward < 0 = toward the STERN.",
+    "lateral": "across the hull. lateral < 0 = one side, lateral > 0 = the other (port/starboard).",
+    "scale": "1.0 = half the sprite width (forward) / half the sprite height (lateral). e.g. forward 0.45 = nose tip, lateral 0.31 = hull edge.",
+    "fields": {
+      "texture": "sprite base name in textures/sprites/ (loads <texture>.png + <texture>_n.png)",
+      "aspect": "texture height / width (locks sprite proportions; keep matched to the PNG)",
+      "engines": "list of exhaust-nozzle anchors (engine flames spawn here). Usually forward < 0 (stern).",
+      "turrets": "list of weapon-mount anchors (projectiles/beams originate here). Usually forward > 0 (toward the nose).",
+      "shieldArc": "half-width of the deployed shield arc as a fraction of PI. 0.66 = ~119 deg each way (~238 deg total). 0.5 = 90 deg half (180 total). 1.0 = full bubble."
+    }
+  },
+  "ship": {
+    "texture": "ship",
+    "aspect": 0.3915493,
+    "engines": [[-0.400, -0.260], [-0.400, -0.160], [-0.345, 0.000], [-0.400, 0.160], [-0.400, 0.260]],
+    "turrets": [[0.420, 0.000], [0.150, -0.130], [0.150, 0.130], [-0.050, -0.160], [-0.050, 0.160]],
+    "shieldArc": 0.66
+  },
+  "dest": {
+    "texture": "destroyer",
+    "aspect": 0.4927867,
+    "engines": [[-0.488, -0.290], [-0.5, -0.135], [-0.5, 0.135], [-0.488, 0.290]],
+    "turrets": [[0.440, -0.040], [0.440, 0.040], [0.180, -0.160], [0.180, 0.160], [-0.050, -0.270], [-0.050, 0.270]],
+    "shieldArc": 0.9
+  },
+  "frig": {
+    "texture": "frigate",
+    "aspect": 0.8468809,
+    "engines": [[-0.48, -0.0], [-0.5, -0.130], [-0.5, 0.130], [-0.47, -0.422], [-0.47, 0.422]],
+    "turrets": [[0.460, 0.000], [0.120, -0.130], [0.120, 0.130], [-0.050, -0.160], [-0.050, 0.160]],
+    "shieldArc": 0.3
+  }
+}

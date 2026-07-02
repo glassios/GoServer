@@ -7,6 +7,7 @@ import (
 
 	"github.com/Home/galaxy-mmo/internal/domain"
 	"github.com/Home/galaxy-mmo/internal/ecs"
+	"github.com/Home/galaxy-mmo/internal/spatial"
 	"github.com/Home/galaxy-mmo/pkg/mathutil"
 )
 
@@ -18,6 +19,22 @@ type AISystem struct {
 	worldWidth      float32
 	worldHeight     float32
 	templates       []domain.NPCSnapshot
+	grid            *spatial.HashGrid
+}
+
+// SetGrid wires the spatial index so neighbour searches use a broadphase radius query
+// instead of scanning every entity in the world each tick. Falls back to a full scan
+// when nil (e.g. in unit tests), so behaviour is preserved.
+func (s *AISystem) SetGrid(grid *spatial.HashGrid) { s.grid = grid }
+
+// candidatesInRadius returns entity IDs near (x,y) via the grid broadphase, or every
+// Transform-bearing entity when no grid is wired. The caller still applies the exact
+// distance/type/faction filtering.
+func (s *AISystem) candidatesInRadius(world *ecs.World, x, y, radius float32) []domain.EntityID {
+	if s.grid != nil {
+		return s.grid.QueryRadius(x, y, radius)
+	}
+	return world.Query(ecs.BuildMask(domain.Transform{}))
 }
 
 func NewAISystem(scanRange float32, maxNPCs int, width, height float32) *AISystem {
@@ -279,7 +296,8 @@ func (s *AISystem) updatePatrol(world *ecs.World, id domain.EntityID, myPos math
 		minEnemyDist := float32(500.0)
 		foundEnemy := false
 
-		allEntities := world.Query(ecs.BuildMask(domain.Transform{}))
+		// Only need candidates within the 500u acquisition range — use the grid broadphase.
+		allEntities := s.candidatesInRadius(world, myPos.X, myPos.Y, 500.0)
 
 		for _, entID := range allEntities {
 			if entID == id {
@@ -359,14 +377,16 @@ func (s *AISystem) updatePatrol(world *ecs.World, id domain.EntityID, myPos math
 
 	// 2. Если рядом есть активный бой (CombatMarker), летим в его сторону (только для патрулей)
 	if factionID == 2 {
-		mask := ecs.BuildMask(domain.Transform{}, domain.CombatMarker{})
-		markers := world.Query(mask)
-		
+		markers := s.candidatesInRadius(world, myPos.X, myPos.Y, 500.0)
+
 		var nearestMarkerPos mathutil.Vec2
 		minDist := float32(500.0) // Ищем в радиусе 500
 		foundMarker := false
-		
+
 		for _, markerID := range markers {
+			if _, isMarker := world.GetComponent(markerID, domain.CombatMarker{}); !isMarker {
+				continue
+			}
 			tVal, _ := world.GetComponent(markerID, domain.Transform{})
 			t := tVal.(*domain.Transform)
 			pos := mathutil.NewVec2(t.X, t.Y)
@@ -409,21 +429,32 @@ func (s *AISystem) updatePatrol(world *ecs.World, id domain.EntityID, myPos math
 // Helper methods
 
 func (s *AISystem) findNearestEntity(world *ecs.World, myPos mathutil.Vec2, eType domain.EntityType) (domain.EntityID, mathutil.Vec2, bool) {
-	mask := ecs.BuildMask(domain.Transform{})
-	entities := world.Query(mask)
+	// Try a generous grid radius first; fall back to a full scan only if nothing of this
+	// type is nearby (rare), preserving the global-nearest semantics.
+	if s.grid != nil {
+		if id, pos, ok := s.nearestOfTypeIn(world, s.grid.QueryRadius(myPos.X, myPos.Y, 4000), myPos, eType); ok {
+			return id, pos, true
+		}
+	}
+	return s.nearestOfTypeIn(world, world.Query(ecs.BuildMask(domain.Transform{})), myPos, eType)
+}
 
+func (s *AISystem) nearestOfTypeIn(world *ecs.World, candidates []domain.EntityID, myPos mathutil.Vec2, eType domain.EntityType) (domain.EntityID, mathutil.Vec2, bool) {
 	var nearestID domain.EntityID
 	var nearestPos mathutil.Vec2
 	minDist := float32(math.MaxFloat32)
 	found := false
 
-	for _, id := range entities {
+	for _, id := range candidates {
 		t, ok := world.GetEntityType(id)
 		if !ok || t != eType {
 			continue
 		}
 
-		tVal, _ := world.GetComponent(id, domain.Transform{})
+		tVal, okT := world.GetComponent(id, domain.Transform{})
+		if !okT {
+			continue
+		}
 		trans := tVal.(*domain.Transform)
 		pos := mathutil.NewVec2(trans.X, trans.Y)
 
@@ -906,8 +937,7 @@ func (s *AISystem) updateEscort(world *ecs.World, id domain.EntityID, myPos math
 			}
 		}
 
-		mask := ecs.BuildMask(domain.Transform{}, domain.FactionMember{}, domain.Fleet{})
-		entities := world.Query(mask)
+		entities := s.candidatesInRadius(world, myPos.X, myPos.Y, 3000)
 
 		var nearestID domain.EntityID
 		var nearestPos mathutil.Vec2
@@ -918,12 +948,17 @@ func (s *AISystem) updateEscort(world *ecs.World, id domain.EntityID, myPos math
 			if entID == id {
 				continue
 			}
-			fVal, _ := world.GetComponent(entID, domain.FactionMember{})
-			if fVal.(*domain.FactionMember).FactionID != myFactionID {
+			fVal, okF := world.GetComponent(entID, domain.FactionMember{})
+			if !okF || fVal.(*domain.FactionMember).FactionID != myFactionID {
 				continue
 			}
-
-			tVal, _ := world.GetComponent(entID, domain.Transform{})
+			if _, okFleet := world.GetComponent(entID, domain.Fleet{}); !okFleet {
+				continue
+			}
+			tVal, okT := world.GetComponent(entID, domain.Transform{})
+			if !okT {
+				continue
+			}
 			t := tVal.(*domain.Transform)
 			pos := mathutil.NewVec2(t.X, t.Y)
 			dist := myPos.Distance(pos)
@@ -1081,25 +1116,33 @@ func (s *AISystem) updateDefend(world *ecs.World, id domain.EntityID, myPos math
 }
 
 func (s *AISystem) findNearestFactionStation(world *ecs.World, myPos mathutil.Vec2, factionID uint32) (domain.EntityID, mathutil.Vec2, bool) {
-	mask := ecs.BuildMask(domain.Transform{}, domain.StationOwnership{})
-	entities := world.Query(mask)
+	if s.grid != nil {
+		if id, pos, ok := s.nearestStationIn(world, s.grid.QueryRadius(myPos.X, myPos.Y, 6000), myPos, factionID); ok {
+			return id, pos, true
+		}
+	}
+	return s.nearestStationIn(world, world.Query(ecs.BuildMask(domain.Transform{}, domain.StationOwnership{})), myPos, factionID)
+}
 
+func (s *AISystem) nearestStationIn(world *ecs.World, candidates []domain.EntityID, myPos mathutil.Vec2, factionID uint32) (domain.EntityID, mathutil.Vec2, bool) {
 	var nearestID domain.EntityID
 	var nearestPos mathutil.Vec2
 	minDist := float32(math.MaxFloat32)
 	found := false
 
-	for _, id := range entities {
-		tVal, _ := world.GetComponent(id, domain.Transform{})
-		oVal, _ := world.GetComponent(id, domain.StationOwnership{})
-
-		trans := tVal.(*domain.Transform)
-		ownership := oVal.(*domain.StationOwnership)
-
-		if ownership.CorpID != factionID {
+	for _, id := range candidates {
+		oVal, okO := world.GetComponent(id, domain.StationOwnership{})
+		if !okO {
 			continue
 		}
-
+		if oVal.(*domain.StationOwnership).CorpID != factionID {
+			continue
+		}
+		tVal, okT := world.GetComponent(id, domain.Transform{})
+		if !okT {
+			continue
+		}
+		trans := tVal.(*domain.Transform)
 		pos := mathutil.NewVec2(trans.X, trans.Y)
 		dist := myPos.Distance(pos)
 		if dist < minDist {

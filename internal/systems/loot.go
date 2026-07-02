@@ -10,12 +10,30 @@ import (
 
 type LootSystem struct {
 	grid *spatial.HashGrid
+	// pickedUp accumulates player IDs that gained items this tick, so the world
+	// node can push an s_inventory_update for them (auto-pickup has no command).
+	pickedUp map[domain.EntityID]bool
 }
 
 func NewLootSystem(grid *spatial.HashGrid) *LootSystem {
 	return &LootSystem{
-		grid: grid,
+		grid:     grid,
+		pickedUp: make(map[domain.EntityID]bool),
 	}
+}
+
+// DrainPickups returns and clears the set of player IDs that picked up loot since
+// the last call (so the caller can send each an inventory update).
+func (s *LootSystem) DrainPickups() []domain.EntityID {
+	if len(s.pickedUp) == 0 {
+		return nil
+	}
+	ids := make([]domain.EntityID, 0, len(s.pickedUp))
+	for id := range s.pickedUp {
+		ids = append(ids, id)
+	}
+	s.pickedUp = make(map[domain.EntityID]bool)
+	return ids
 }
 
 func (s *LootSystem) Name() string {
@@ -69,9 +87,10 @@ func (s *LootSystem) Update(world *ecs.World, dt float64) {
 					pickerPlayer := pickerPlayerVal.(*domain.PlayerData)
 					pickerPlayer.Credits += lootInfo.Credits
 					lootInfo.Credits = 0
+					s.pickedUp[pickerID] = true
 				}
 
-				// 2. Pick up cargo items
+				// 2. Pick up cargo items (capacity is measured in VOLUME units)
 				pickerCargoVal, _ := world.GetComponent(pickerID, domain.Cargo{})
 				pickerCargo := pickerCargoVal.(*domain.Cargo)
 
@@ -79,23 +98,28 @@ func (s *LootSystem) Update(world *ecs.World, dt float64) {
 					if item.Quantity <= 0 {
 						continue
 					}
-					// Calculate current picker cargo load
-					pickerLoad := int32(0)
-					for _, it := range pickerCargo.Items {
-						pickerLoad += it.Quantity
+					vol := domain.VolumeForID(item.DefinitionID)
+					spaceLeftVol := float32(pickerCargo.Capacity) - pickerCargo.LoadVolume()
+					if spaceLeftVol <= 0 || vol <= 0 {
+						break // No cargo volume left on picker
 					}
-					spaceLeft := pickerCargo.Capacity - pickerLoad
-					if spaceLeft <= 0 {
-						break // No cargo space left on picker
+					maxByVol := int32(spaceLeftVol / vol)
+					if maxByVol <= 0 {
+						break
 					}
-
 					toAdd := item.Quantity
-					if toAdd > spaceLeft {
-						toAdd = spaceLeft
+					if toAdd > maxByVol {
+						toAdd = maxByVol
+					}
+					if toAdd <= 0 {
+						break
 					}
 
 					pickerCargo.AddItem(item.DefinitionID, toAdd)
 					lootCargo.Items[i].Quantity -= toAdd
+					if _, isPlayer := world.GetComponent(pickerID, domain.PlayerData{}); isPlayer {
+						s.pickedUp[pickerID] = true
+					}
 				}
 
 				// Clean up empty items

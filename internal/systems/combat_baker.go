@@ -57,10 +57,19 @@ func UnpackFleet(sourceWorld, targetWorld *ecs.World, fleetEntityID domain.Entit
 			isFlagship = false
 		}
 
-		// Вычисляем координаты спавна с отступом для эскорта
+		// Вычисляем координаты спавна. При сохранённом построении каждый корабль встаёт на своё
+		// место (ранг = глубина строя, колонка = смещение вбок), повёрнутое по направлению флота;
+		// иначе — прежняя раскладка эскорта полукругом позади флагмана.
 		x := baseX
 		y := baseY
-		if !isFlagship {
+		if fleet.HasFormation {
+			const rankGap, colGap = 150.0, 95.0
+			fwd := -float64(ship.FormationRank) * rankGap // ранг 0 на передовой, дальше — вглубь
+			lat := (float64(ship.FormationCol) - 2.5) * colGap
+			cos, sin := math.Cos(angleOffset), math.Sin(angleOffset)
+			x += float32(fwd*cos - lat*sin)
+			y += float32(fwd*sin + lat*cos)
+		} else if !isFlagship {
 			// Размещаем эскорт полукругом позади флагмана
 			offsetAngle := angleOffset + math.Pi + (float64(i)*0.5 - 0.75)
 			x += float32(math.Cos(offsetAngle) * 80.0)
@@ -128,6 +137,9 @@ func UnpackFleet(sourceWorld, targetWorld *ecs.World, fleetEntityID domain.Entit
 
 		// Transient combat FX (shots fired / last damage type) for the snapshot.
 		targetWorld.AddComponent(shipID, &domain.CombatFx{})
+
+		// Subsystem disables from missile strikes (Phase B4): starts clean.
+		targetWorld.AddComponent(shipID, &domain.SubsystemState{})
 
 		// The Weapon component is the AI's targeting controller: AISystem sets Active/TargetID and
 		// uses Range for standoff; CombatSystem reads the target but deals damage via WeaponGroup.
@@ -252,6 +264,18 @@ func PackFleet(sourceWorld, targetWorld *ecs.World, fleetEntityID domain.EntityI
 			Shield:        s.Current,
 			MaxShield:     s.Max,
 			CargoCapacity: originalShip.CargoCapacity,
+			// Carry the player's pre-battle tactics, loadout and formation slot across the
+			// engagement — otherwise survivors would revert to stock/default next fight.
+			Role:           originalShip.Role,
+			Strategy:       originalShip.Strategy,
+			Customized:     originalShip.Customized,
+			HullID:         originalShip.HullID,
+			FittedWeapons:  originalShip.FittedWeapons,
+			FittedHullmods: originalShip.FittedHullmods,
+			Vents:          originalShip.Vents,
+			Capacitors:     originalShip.Capacitors,
+			FormationRank:  originalShip.FormationRank,
+			FormationCol:   originalShip.FormationCol,
 		})
 
 		// Синхронизируем HP/SH ведущего (первого выжившего) корабля на сущность флота в основном
